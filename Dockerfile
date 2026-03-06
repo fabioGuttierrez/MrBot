@@ -16,9 +16,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Coleta estáticos na build (precisa de SECRET_KEY mínima)
+# Garante que o diretório de estáticos existe
+RUN mkdir -p static staticfiles
+
+# Coleta estáticos na build
 RUN SECRET_KEY=build-only-placeholder \
     DATABASE_URL=postgres://x:x@localhost/x \
     python manage.py collectstatic --noinput
 
 EXPOSE 8000
+
+CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "config.asgi:application"]

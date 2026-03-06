@@ -1,0 +1,180 @@
+{% load humanize %}
+<!-- ── Header da conversa ── -->
+<div class="flex items-center justify-between px-4 py-3 bg-wa-panel border-b border-gray-200 flex-shrink-0">
+  <div class="flex items-center gap-3">
+    <div class="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm
+      {% if conversation.status == 'bot' %}bg-green-500
+      {% elif conversation.status == 'human' %}bg-blue-500
+      {% elif conversation.status == 'pending' %}bg-orange-400
+      {% else %}bg-gray-400{% endif %}">
+      {{ conversation.contact.display_name|first|upper }}
+    </div>
+    <div>
+      <p class="font-semibold text-gray-800 text-sm">{{ conversation.contact.display_name }}</p>
+      <p class="text-xs text-gray-500">{{ conversation.contact.phone }}</p>
+    </div>
+  </div>
+
+  <!-- Ações do agente -->
+  <div class="flex items-center gap-2">
+    {% include "inbox/_conversation_status_badge.html" %}
+
+    {% if conversation.status == 'bot' or conversation.status == 'pending' %}
+    <form method="post" action="{% url 'inbox:takeover' conversation.id %}">
+      {% csrf_token %}
+      <button type="submit"
+        hx-post="{% url 'inbox:takeover' conversation.id %}"
+        hx-target="#status-badge-{{ conversation.id }}"
+        hx-swap="outerHTML"
+        class="px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition">
+        Assumir
+      </button>
+    </form>
+    {% elif conversation.status == 'human' %}
+    <button
+      hx-post="{% url 'inbox:release' conversation.id %}"
+      hx-target="#status-badge-{{ conversation.id }}"
+      hx-swap="outerHTML"
+      hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+      class="px-3 py-1.5 text-xs font-medium text-green-600 border border-green-200 rounded-lg hover:bg-green-50 transition">
+      Devolver ao Bot
+    </button>
+    {% endif %}
+
+    <form method="post" action="{% url 'inbox:close' conversation.id %}"
+          onsubmit="return confirm('Encerrar esta conversa?')">
+      {% csrf_token %}
+      <button type="submit"
+        class="px-3 py-1.5 text-xs font-medium text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition">
+        Encerrar
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- ── Mensagens ── -->
+<div id="messages-container"
+     class="flex-1 overflow-y-auto px-4 py-4 space-y-1 bg-wa-panel"
+     x-data="chatWindow('{{ conversation.id }}', '{{ csrf_token }}')"
+     x-init="connect()">
+
+  <!-- Mensagens históricas (SSR) -->
+  {% for message in messages %}
+    {% include "inbox/_message_bubble.html" %}
+  {% endfor %}
+
+  <!-- Novas mensagens chegam aqui via WebSocket -->
+  <div id="ws-messages"></div>
+  <div id="scroll-anchor"></div>
+</div>
+
+<!-- ── Input do agente ── -->
+<div class="flex-shrink-0 bg-wa-panel border-t border-gray-200 px-4 py-3">
+  {% if conversation.status == 'closed' %}
+    <p class="text-center text-sm text-gray-400 py-2">Conversa encerrada</p>
+  {% else %}
+    <div class="flex items-end gap-2 bg-white rounded-2xl border border-gray-200 px-4 py-2"
+         x-data>
+      <textarea
+        x-model="$store.activeChat.draft"
+        @keydown.enter.prevent="if(!$event.shiftKey) $store.activeChat.send()"
+        rows="1"
+        placeholder="Digite uma mensagem... (Enter para enviar, Shift+Enter para nova linha)"
+        class="flex-1 text-sm resize-none focus:outline-none max-h-32 overflow-y-auto bg-transparent"
+      ></textarea>
+      <button @click="$store.activeChat.send()"
+              class="w-9 h-9 flex-shrink-0 rounded-full bg-wa-green flex items-center justify-center hover:bg-wa-dark transition">
+        <svg class="w-4 h-4 text-white rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+        </svg>
+      </button>
+    </div>
+    <p class="text-xs text-gray-400 mt-1 text-center">
+      {% if conversation.status == 'bot' %}Este chat está com o bot. Assuma para enviar mensagens.
+      {% elif conversation.status == 'pending' %}Aguardando agente.
+      {% else %}Você está atendendo esta conversa.{% endif %}
+    </p>
+  {% endif %}
+</div>
+
+<script>
+(function() {
+  const convId = "{{ conversation.id }}";
+  const csrfToken = "{{ csrf_token }}";
+
+  // Store fixo — só há um chat aberto por vez
+  if (typeof Alpine !== 'undefined') {
+    Alpine.store('activeChat', {
+      draft: "",
+      ws: null,
+      send() {
+        const text = this.draft.trim();
+        if (!text) return;
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify({ action: "send_message", text }));
+          this.draft = "";
+        }
+      }
+    });
+  }
+})();
+
+function chatWindow(convId, csrf) {
+  return {
+    ws: null,
+    connect() {
+      const protocol = location.protocol === "https:" ? "wss" : "ws";
+      const url = `${protocol}://${location.host}/ws/inbox/${convId}/`;
+      this.ws = new WebSocket(url);
+
+      this.ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        this._appendMessage(msg);
+      };
+
+      this.ws.onclose = () => {
+        // Reconecta após 3s
+        setTimeout(() => this.connect(), 3000);
+      };
+
+      // Registra ws no store fixo
+      this.$nextTick(() => {
+        const store = Alpine.store('activeChat');
+        if (store) store.ws = this.ws;
+      });
+
+      this._scrollBottom();
+    },
+
+    _appendMessage(msg) {
+      const container = document.getElementById("ws-messages");
+      if (!container) return;
+
+      const isOut = msg.direction === "out";
+      const time = new Date(msg.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+
+      const div = document.createElement("div");
+      div.className = `flex ${isOut ? "justify-end" : "justify-start"} mb-1`;
+      div.innerHTML = `
+        <div class="max-w-[70%] px-3 py-2 rounded-2xl text-sm shadow-sm
+          ${isOut ? "bg-wa-bubble text-white rounded-br-sm" : "bg-white text-gray-800 rounded-bl-sm"}">
+          <p class="whitespace-pre-wrap break-words">${this._escape(msg.content)}</p>
+          <p class="text-right mt-1 ${isOut ? "text-green-200" : "text-gray-400"} text-xs">${time}</p>
+        </div>`;
+      container.appendChild(div);
+      this._scrollBottom();
+    },
+
+    _escape(text) {
+      return text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\n/g,"<br>");
+    },
+
+    _scrollBottom() {
+      this.$nextTick(() => {
+        const anchor = document.getElementById("scroll-anchor");
+        if (anchor) anchor.scrollIntoView({ behavior: "smooth" });
+      });
+    },
+  };
+}
+</script>

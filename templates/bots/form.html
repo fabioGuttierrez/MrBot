@@ -1,0 +1,108 @@
+{% extends "base_app.html" %}
+{% block title %}{% if action == 'edit' %}{{ bot.name }}{% else %}Novo Bot{% endif %} — MrBot{% endblock %}
+
+{% block app_content %}
+<div class="flex-1 overflow-y-auto bg-gray-50">
+
+  <!-- Header -->
+  <div class="bg-white border-b px-6 py-4 flex items-center gap-4">
+    <a href="{% url 'bots:index' %}" class="text-gray-400 hover:text-gray-600 transition">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+      </svg>
+    </a>
+    <div>
+      <h1 class="text-xl font-semibold text-gray-800">
+        {% if action == 'edit' %}Editar: {{ bot.name }}{% else %}Novo Bot{% endif %}
+      </h1>
+      <p class="text-sm text-gray-500 mt-0.5">Configure a persona e comportamento do bot</p>
+    </div>
+  </div>
+
+  <div class="max-w-3xl mx-auto px-6 py-8">
+    <form method="post" class="space-y-6">
+      {% csrf_token %}
+
+      <!-- Básico -->
+      <div class="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+        <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide">Básico</h2>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Nome do bot</label>
+          <input type="text" name="name" value="{{ bot.name|default:'' }}" required
+                 placeholder="Ex: Vendas WhatsApp"
+                 class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-wa-green">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Departamento</label>
+          <select name="department"
+                  class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-wa-green">
+            {% for value, label in departments %}
+              <option value="{{ value }}" {% if bot.department == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Modelo OpenAI</label>
+          <select name="model"
+                  class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-wa-green">
+            <option value="gpt-4o" {% if bot.model == 'gpt-4o' or not bot %}selected{% endif %}>gpt-4o</option>
+            <option value="gpt-4o-mini" {% if bot.model == 'gpt-4o-mini' %}selected{% endif %}>gpt-4o-mini</option>
+            <option value="gpt-3.5-turbo" {% if bot.model == 'gpt-3.5-turbo' %}selected{% endif %}>gpt-3.5-turbo</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Persona -->
+      <div class="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+        <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide">Persona</h2>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Descrição da personalidade</label>
+          <textarea name="persona" rows="3"
+                    placeholder="Ex: Você é um assistente de vendas simpático, focado em converter leads..."
+                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-wa-green resize-none">{{ bot.persona|default:'' }}</textarea>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">O que o bot PODE fazer
+            <span class="text-gray-400 font-normal">(uma por linha)</span></label>
+          <textarea name="capabilities" rows="4"
+                    placeholder="Apresentar produtos&#10;Enviar catálogo&#10;Agendar demonstração"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-wa-green resize-none">{% for cap in bot.capabilities %}{{ cap }}
+{% endfor %}</textarea>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">O que o bot NÃO PODE fazer
+            <span class="text-gray-400 font-normal">(uma por linha)</span></label>
+          <textarea name="restrictions" rows="3"
+                    placeholder="Dar preços sem negociação&#10;Prometer prazos"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-wa-green resize-none">{% for rest in bot.restrictions %}{{ rest }}
+{% endfor %}</textarea>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Instruções extras</label>
+          <textarea name="extra_instructions" rows="3"
+                    placeholder="Qualquer instrução adicional para o bot..."
+                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-wa-green resize-none">{{ bot.extra_instructions|default:'' }}</textarea>
+        </div>
+      </div>
+
+      <!-- Ações -->
+      <div class="flex items-center justify-between">
+        <a href="{% url 'bots:index' %}" class="text-sm text-gray-500 hover:text-gray-700">Cancelar</a>
+        <button type="submit"
+                class="px-6 py-2.5 bg-wa-green hover:bg-wa-dark text-white text-sm font-semibold rounded-lg transition">
+          {% if action == 'edit' %}Salvar alterações{% else %}Criar bot{% endif %}
+        </button>
+      </div>
+
+    </form>
+  </div>
+
+</div>
+{% endblock %}

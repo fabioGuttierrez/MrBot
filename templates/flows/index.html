@@ -1,0 +1,79 @@
+{% extends "base_app.html" %}
+{% block title %}Flows — MrBot{% endblock %}
+
+{% block app_content %}
+<div class="flex-1 overflow-y-auto bg-gray-50">
+  <!-- Header -->
+  <div class="bg-white border-b px-6 py-4 flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-gray-800">Flow Builder</h1>
+      <p class="text-sm text-gray-500 mt-0.5">Gerencie os fluxos de atendimento dos seus bots</p>
+    </div>
+    <a href="{% url 'flows:new' %}"
+       class="inline-flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white text-sm font-medium rounded-lg transition">
+      + Novo Flow
+    </a>
+  </div>
+
+  <div class="max-w-5xl mx-auto px-6 py-8">
+    {% if flows %}
+      <div class="grid gap-4">
+        {% for flow in flows %}
+        <div class="bg-white rounded-xl border border-gray-200 p-5 flex items-center justify-between hover:shadow-sm transition">
+          <div class="flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg flex items-center justify-center text-xl
+              {% if flow.is_active %}bg-green-100{% else %}bg-gray-100{% endif %}">
+              🔀
+            </div>
+            <div>
+              <p class="font-medium text-gray-800">{{ flow.name }}</p>
+              <p class="text-sm text-gray-500">
+                {% if flow.bot %}Bot: {{ flow.bot.name }}{% else %}Sem bot vinculado{% endif %}
+                · {{ flow.definition.nodes|length }} nós
+                ·
+                <span class="{% if flow.is_active %}text-green-600{% else %}text-gray-400{% endif %}">
+                  {{ flow.is_active|yesno:"Ativo,Inativo" }}
+                </span>
+              </p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <a href="{% url 'flows:builder' flow.id %}"
+               class="px-3 py-1.5 text-sm text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition">
+              Editar
+            </a>
+            <form method="post" action="{% url 'flows:toggle' flow.id %}">
+              {% csrf_token %}
+              <button type="submit"
+                class="px-3 py-1.5 text-sm border rounded-lg transition
+                  {% if flow.is_active %}text-orange-600 border-orange-200 hover:bg-orange-50
+                  {% else %}text-green-600 border-green-200 hover:bg-green-50{% endif %}">
+                {{ flow.is_active|yesno:"Desativar,Ativar" }}
+              </button>
+            </form>
+            <form method="post" action="{% url 'flows:delete' flow.id %}"
+                  onsubmit="return confirm('Remover este flow?')">
+              {% csrf_token %}
+              <button type="submit"
+                class="px-3 py-1.5 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition">
+                Remover
+              </button>
+            </form>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="text-center py-20">
+        <div class="text-6xl mb-4">🔀</div>
+        <h2 class="text-lg font-medium text-gray-700 mb-2">Nenhum flow criado ainda</h2>
+        <p class="text-gray-500 text-sm mb-6">Crie um flow para definir como seu bot vai conversar.</p>
+        <a href="{% url 'flows:new' %}"
+           class="inline-flex items-center gap-2 px-5 py-2.5 bg-green-500 hover:bg-green-600 text-white text-sm font-medium rounded-lg transition">
+          Criar primeiro Flow
+        </a>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

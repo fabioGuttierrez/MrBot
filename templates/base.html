@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="pt-br" class="h-full bg-gray-100">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}MrBot{% endblock %}</title>
+
+  <!-- Tailwind CSS (via CDN para dev; substituir por build em produção) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            wa: {
+              green:  '#25D366',
+              dark:   '#128C7E',
+              light:  '#DCF8C6',
+              panel:  '#F0F2F5',
+              header: '#202C33',
+              bubble: '#005C4B',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+  <!-- HTMX -->
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+
+  {% block extra_head %}{% endblock %}
+</head>
+<body class="h-full {% block body_class %}{% endblock %}">
+
+  {% if messages %}
+    <div id="messages" class="fixed top-4 right-4 z-50 space-y-2"
+         x-data="{ show: true }" x-show="show">
+      {% for message in messages %}
+        <div class="px-4 py-3 rounded shadow-lg text-sm text-white
+          {% if message.tags == 'error' %}bg-red-500
+          {% elif message.tags == 'success' %}bg-green-500
+          {% elif message.tags == 'warning' %}bg-yellow-500
+          {% else %}bg-blue-500{% endif %}"
+          x-init="setTimeout(() => show = false, 4000)">
+          {{ message }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% block content %}{% endblock %}
+
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

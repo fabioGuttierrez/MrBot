@@ -1,0 +1,17 @@
+{% load humanize %}
+<div class="flex {% if message.direction == 'out' %}justify-end{% else %}justify-start{% endif %} mb-1">
+  <div class="max-w-[70%] px-3 py-2 rounded-2xl text-sm shadow-sm
+    {% if message.direction == 'out' %}bg-wa-bubble text-white rounded-br-sm
+    {% else %}bg-white text-gray-800 rounded-bl-sm{% endif %}">
+    <p class="whitespace-pre-wrap break-words">{{ message.content }}</p>
+    {% if message.is_concatenated %}
+      <p class="text-xs mt-0.5 {% if message.direction == 'out' %}text-green-200{% else %}text-gray-400{% endif %}">
+        🔗 msgs agrupadas
+      </p>
+    {% endif %}
+    <p class="text-right mt-1 text-xs {% if message.direction == 'out' %}text-green-200{% else %}text-gray-400{% endif %}">
+      {{ message.created|time:"H:i" }}
+      {% if message.direction == 'out' %}✓✓{% endif %}
+    </p>
+  </div>
+</div>

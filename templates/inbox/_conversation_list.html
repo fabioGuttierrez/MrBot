@@ -1,0 +1,53 @@
+{% load humanize %}
+{% if conversations %}
+  {% for conv in conversations %}
+  <div class="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 transition group"
+       hx-get="{% url 'inbox:detail' conv.id %}?status={{ active_filter }}"
+       hx-target="#chat-panel"
+       hx-swap="innerHTML"
+       hx-push-url="{% url 'inbox:detail' conv.id %}">
+
+    <!-- Avatar -->
+    <div class="relative flex-shrink-0">
+      <div class="w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-sm
+        {% if conv.status == 'bot' %}bg-green-500
+        {% elif conv.status == 'human' %}bg-blue-500
+        {% elif conv.status == 'pending' %}bg-orange-400
+        {% else %}bg-gray-400{% endif %}">
+        {{ conv.contact.display_name|first|upper }}
+      </div>
+      <!-- Badge de status -->
+      <span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white
+        {% if conv.status == 'bot' %}bg-green-400
+        {% elif conv.status == 'human' %}bg-blue-400
+        {% elif conv.status == 'pending' %}bg-orange-400
+        {% else %}bg-gray-300{% endif %}">
+      </span>
+    </div>
+
+    <!-- Info -->
+    <div class="flex-1 min-w-0">
+      <div class="flex items-center justify-between">
+        <p class="font-medium text-gray-800 text-sm truncate">{{ conv.contact.display_name }}</p>
+        <p class="text-xs text-gray-400 flex-shrink-0 ml-2">
+          {% if conv.last_message_at %}{{ conv.last_message_at|naturaltime }}{% endif %}
+        </p>
+      </div>
+      <div class="flex items-center justify-between mt-0.5">
+        <p class="text-xs text-gray-500 truncate">
+          {% if conv.bot %}🤖 {{ conv.bot.name }}{% else %}—{% endif %}
+        </p>
+        {% if conv.unread_count > 0 %}
+        <span class="bg-green-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0 ml-2">
+          {{ conv.unread_count }}
+        </span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="flex flex-col items-center justify-center py-12 text-gray-400">
+    <p class="text-sm">Nenhuma conversa encontrada</p>
+  </div>
+{% endif %}

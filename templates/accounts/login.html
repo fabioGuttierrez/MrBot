@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Login — MrBot{% endblock %}
+{% block body_class %}bg-wa-panel{% endblock %}
+
+{% block content %}
+<div class="min-h-screen flex items-center justify-center px-4">
+  <div class="w-full max-w-md">
+
+    <!-- Logo / Header -->
+    <div class="text-center mb-8">
+      <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-wa-green mb-4">
+        <svg class="w-9 h-9 text-white" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15
+            -.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075
+            -.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059
+            -.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52
+            .149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52
+            -.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51
+            -.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372
+            -.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074
+            .149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625
+            .712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413
+            .248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+          <path d="M12 0C5.373 0 0 5.373 0 12c0 2.125.557 4.126 1.528 5.858L0 24l6.335-1.508A11.93 11.93 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.8 9.8 0 01-4.964-1.349l-.356-.211-3.762.896.958-3.65-.232-.375A9.795 9.795 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182S21.818 6.57 21.818 12 17.43 21.818 12 21.818z"/>
+        </svg>
+      </div>
+      <h1 class="text-2xl font-bold text-wa-header">MrBot</h1>
+      <p class="text-gray-500 text-sm mt-1">Plataforma de atendimento conversacional</p>
+    </div>
+
+    <!-- Card Login -->
+    <div class="bg-white rounded-2xl shadow-lg p-8">
+      <h2 class="text-lg font-semibold text-gray-800 mb-6">Entrar na sua conta</h2>
+
+      <form method="post" action="{% url 'account_login' %}" class="space-y-4">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.GET.next|default:'/inbox/' }}" />
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">E-mail</label>
+          <input
+            type="email"
+            name="login"
+            required
+            autofocus
+            class="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-wa-green text-sm"
+            placeholder="seu@email.com"
+          />
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Senha</label>
+          <input
+            type="password"
+            name="password"
+            required
+            class="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-wa-green text-sm"
+            placeholder="••••••••"
+          />
+        </div>
+
+        {% if form.errors %}
+          <p class="text-red-500 text-sm">E-mail ou senha inválidos.</p>
+        {% endif %}
+
+        <button
+          type="submit"
+          class="w-full py-2.5 bg-wa-green hover:bg-wa-dark text-white font-semibold rounded-lg transition-colors text-sm">
+          Entrar
+        </button>
+      </form>
+
+      <p class="text-center text-sm text-gray-500 mt-6">
+        Não tem conta?
+        <a href="{% url 'account_signup' %}" class="text-wa-dark font-medium hover:underline">Cadastre-se</a>
+      </p>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

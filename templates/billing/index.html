@@ -1,0 +1,87 @@
+{% extends "base_app.html" %}
+{% block title %}Planos — MrBot{% endblock %}
+
+{% block app_content %}
+<div class="flex-1 overflow-y-auto bg-gray-50">
+
+  <!-- Header -->
+  <div class="bg-white border-b px-6 py-4">
+    <h1 class="text-xl font-semibold text-gray-800">Planos e Assinatura</h1>
+    <p class="text-sm text-gray-500 mt-0.5">Escolha o plano ideal para o seu negócio</p>
+  </div>
+
+  <!-- Assinatura atual -->
+  {% if subscription %}
+  <div class="max-w-5xl mx-auto px-6 pt-6">
+    <div class="bg-wa-green/10 border border-wa-green/30 rounded-xl p-4 flex items-center gap-3">
+      <svg class="w-5 h-5 text-wa-dark flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+      <div>
+        <p class="text-sm font-semibold text-wa-dark">
+          Plano atual: <strong>{{ subscription.plan|capfirst }}</strong>
+        </p>
+        <p class="text-xs text-gray-600">
+          Ativo desde {{ subscription.started_at|date:"d/m/Y" }}
+          {% if subscription.expires_at %} · Expira em {{ subscription.expires_at|date:"d/m/Y" }}{% endif %}
+        </p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Cards de planos -->
+  <div class="max-w-5xl mx-auto px-6 py-8">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {% for plan in plans %}
+      <div class="relative bg-white rounded-2xl border flex flex-col
+        {% if plan.highlighted %}border-wa-green shadow-lg shadow-wa-green/10{% else %}border-gray-200{% endif %}">
+
+        {% if plan.highlighted %}
+        <div class="absolute -top-3 left-1/2 -translate-x-1/2">
+          <span class="bg-wa-green text-white text-xs font-bold px-3 py-1 rounded-full tracking-wide">MAIS POPULAR</span>
+        </div>
+        {% endif %}
+
+        <div class="p-6 flex-1">
+          <h3 class="text-lg font-bold text-gray-800">{{ plan.name }}</h3>
+          <div class="mt-2 mb-3">
+            <span class="text-3xl font-extrabold text-gray-900">{{ plan.price }}</span>
+            <span class="text-sm text-gray-400">{{ plan.period }}</span>
+          </div>
+          <p class="text-sm text-gray-500 mb-5">{{ plan.description }}</p>
+
+          <ul class="space-y-2">
+            {% for feature in plan.features %}
+            <li class="flex items-start gap-2 text-sm text-gray-600">
+              <svg class="w-4 h-4 text-wa-green flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+              </svg>
+              {{ feature }}
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+
+        <div class="px-6 pb-6">
+          <button
+            class="w-full py-2.5 text-sm font-semibold rounded-xl transition
+              {% if plan.highlighted %}bg-wa-green hover:bg-wa-dark text-white
+              {% else %}bg-gray-100 hover:bg-gray-200 text-gray-700{% endif %}">
+            {{ plan.cta }}
+          </button>
+        </div>
+
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Nota -->
+    <p class="text-center text-xs text-gray-400 mt-8">
+      Todos os planos incluem suporte técnico e atualizações automáticas.
+      Cancele a qualquer momento.
+    </p>
+  </div>
+
+</div>
+{% endblock %}

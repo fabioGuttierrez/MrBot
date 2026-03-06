@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block body_class %}overflow-hidden{% endblock %}
+
+{% block content %}
+<div class="flex h-screen bg-gray-100">
+
+  <!-- ===== SIDEBAR SLIM ===== -->
+  <nav class="w-14 flex-shrink-0 bg-wa-header flex flex-col items-center py-3 z-20 shadow-lg">
+
+    <!-- Logo -->
+    <a href="{% url 'inbox:index' %}" title="MrBot" class="mb-4">
+      <div class="w-9 h-9 rounded-xl bg-wa-green flex items-center justify-center shadow">
+        <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
+        </svg>
+      </div>
+    </a>
+
+    <!-- Nav items -->
+    <div class="flex flex-col gap-1 flex-1 w-full px-1.5">
+
+      <!-- Inbox -->
+      <a href="{% url 'inbox:index' %}"
+         title="Inbox"
+         class="group relative flex flex-col items-center gap-0.5 p-2 rounded-xl transition
+           {% if request.resolver_match.app_name == 'inbox' %}bg-white/20 text-white{% else %}text-gray-400 hover:bg-white/10 hover:text-white{% endif %}">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-3 3-3-3z"/>
+        </svg>
+        <span class="text-[9px] font-medium leading-none">Inbox</span>
+        <!-- Tooltip -->
+        <span class="pointer-events-none absolute left-full ml-2 top-1/2 -translate-y-1/2
+                     bg-gray-900 text-white text-xs rounded-lg px-2 py-1 whitespace-nowrap
+                     opacity-0 group-hover:opacity-100 transition-opacity">Inbox</span>
+      </a>
+
+      <!-- Flows -->
+      <a href="{% url 'flows:index' %}"
+         title="Flows"
+         class="group relative flex flex-col items-center gap-0.5 p-2 rounded-xl transition
+           {% if request.resolver_match.app_name == 'flows' %}bg-white/20 text-white{% else %}text-gray-400 hover:bg-white/10 hover:text-white{% endif %}">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+        </svg>
+        <span class="text-[9px] font-medium leading-none">Flows</span>
+        <span class="pointer-events-none absolute left-full ml-2 top-1/2 -translate-y-1/2
+                     bg-gray-900 text-white text-xs rounded-lg px-2 py-1 whitespace-nowrap
+                     opacity-0 group-hover:opacity-100 transition-opacity">Flows</span>
+      </a>
+
+      <!-- Bots -->
+      <a href="{% url 'bots:index' %}"
+         title="Bots"
+         class="group relative flex flex-col items-center gap-0.5 p-2 rounded-xl transition
+           {% if request.resolver_match.app_name == 'bots' %}bg-white/20 text-white{% else %}text-gray-400 hover:bg-white/10 hover:text-white{% endif %}">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2"/>
+        </svg>
+        <span class="text-[9px] font-medium leading-none">Bots</span>
+        <span class="pointer-events-none absolute left-full ml-2 top-1/2 -translate-y-1/2
+                     bg-gray-900 text-white text-xs rounded-lg px-2 py-1 whitespace-nowrap
+                     opacity-0 group-hover:opacity-100 transition-opacity">Bots</span>
+      </a>
+
+      <!-- Contatos -->
+      <a href="{% url 'contacts:index' %}"
+         title="Contatos"
+         class="group relative flex flex-col items-center gap-0.5 p-2 rounded-xl transition
+           {% if request.resolver_match.app_name == 'contacts' %}bg-white/20 text-white{% else %}text-gray-400 hover:bg-white/10 hover:text-white{% endif %}">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        <span class="text-[9px] font-medium leading-none">Contatos</span>
+        <span class="pointer-events-none absolute left-full ml-2 top-1/2 -translate-y-1/2
+                     bg-gray-900 text-white text-xs rounded-lg px-2 py-1 whitespace-nowrap
+                     opacity-0 group-hover:opacity-100 transition-opacity">Contatos</span>
+      </a>
+
+      <!-- Dashboard -->
+      <a href="{% url 'dashboard:index' %}"
+         title="Dashboard"
+         class="group relative flex flex-col items-center gap-0.5 p-2 rounded-xl transition
+           {% if request.resolver_match.app_name == 'dashboard' %}bg-white/20 text-white{% else %}text-gray-400 hover:bg-white/10 hover:text-white{% endif %}">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+        </svg>
+        <span class="text-[9px] font-medium leading-none">Dashboard</span>
+        <span class="pointer-events-none absolute left-full ml-2 top-1/2 -translate-y-1/2
+                     bg-gray-900 text-white text-xs rounded-lg px-2 py-1 whitespace-nowrap
+                     opacity-0 group-hover:opacity-100 transition-opacity">Dashboard</span>
+      </a>
+
+      <!-- Billing -->
+      <a href="{% url 'billing:index' %}"
+         title="Planos"
+         class="group relative flex flex-col items-center gap-0.5 p-2 rounded-xl transition
+           {% if request.resolver_match.app_name == 'billing' %}bg-white/20 text-white{% else %}text-gray-400 hover:bg-white/10 hover:text-white{% endif %}">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>
+        </svg>
+        <span class="text-[9px] font-medium leading-none">Planos</span>
+        <span class="pointer-events-none absolute left-full ml-2 top-1/2 -translate-y-1/2
+                     bg-gray-900 text-white text-xs rounded-lg px-2 py-1 whitespace-nowrap
+                     opacity-0 group-hover:opacity-100 transition-opacity">Planos</span>
+      </a>
+
+    </div>
+
+    <!-- Bottom: sign out -->
+    <div class="w-full px-1.5 flex flex-col gap-1 mt-2 pt-2 border-t border-white/10">
+
+      <!-- Settings -->
+      <a href="/admin/" title="Admin"
+         class="group relative flex flex-col items-center gap-0.5 p-2 rounded-xl text-gray-400 hover:bg-white/10 hover:text-white transition">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        <span class="text-[9px] font-medium leading-none">Admin</span>
+        <span class="pointer-events-none absolute left-full ml-2 top-1/2 -translate-y-1/2
+                     bg-gray-900 text-white text-xs rounded-lg px-2 py-1 whitespace-nowrap
+                     opacity-0 group-hover:opacity-100 transition-opacity">Admin</span>
+      </a>
+
+      <!-- User avatar + logout -->
+      <div class="group relative flex flex-col items-center gap-0.5 p-2 rounded-xl text-gray-400 hover:bg-white/10 hover:text-white transition cursor-pointer"
+           x-data="{ open: false }" @click="open = !open" @click.away="open = false">
+        {% if request.user.avatar %}
+          <img src="{{ request.user.avatar.url }}" class="w-7 h-7 rounded-full object-cover border-2 border-gray-600" />
+        {% else %}
+          <div class="w-7 h-7 rounded-full bg-wa-green flex items-center justify-center text-white text-xs font-bold">
+            {{ request.user.first_name|first|upper }}{{ request.user.last_name|first|upper }}
+          </div>
+        {% endif %}
+        <span class="text-[9px] font-medium leading-none">Eu</span>
+
+        <!-- Dropdown -->
+        <div x-show="open" x-cloak
+             class="absolute left-full bottom-0 ml-2 w-48 bg-white border border-gray-200 rounded-xl shadow-xl py-1 z-50">
+          <div class="px-4 py-2 border-b border-gray-100">
+            <p class="text-sm font-semibold text-gray-800">{{ request.user.get_full_name }}</p>
+            <p class="text-xs text-gray-500 truncate">{{ request.user.email }}</p>
+          </div>
+          <a href="{% url 'account_logout' %}"
+             class="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+            </svg>
+            Sair
+          </a>
+        </div>
+      </div>
+
+    </div>
+  </nav>
+
+  <!-- ===== CONTEÚDO PRINCIPAL ===== -->
+  <div class="flex-1 overflow-hidden flex flex-col">
+    {% block app_content %}{% endblock %}
+  </div>
+
+</div>
+{% endblock %}

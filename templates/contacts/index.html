@@ -1,0 +1,69 @@
+{% extends "base_app.html" %}
+{% block title %}Contatos — MrBot{% endblock %}
+
+{% block app_content %}
+<div class="flex-1 overflow-y-auto bg-gray-50">
+
+  <!-- Header -->
+  <div class="bg-white border-b px-6 py-4">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <h1 class="text-xl font-semibold text-gray-800">Contatos</h1>
+        <p class="text-sm text-gray-500 mt-0.5">{{ contacts.count }} contatos cadastrados</p>
+      </div>
+    </div>
+    <!-- Busca -->
+    <form method="get" class="relative max-w-sm">
+      <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+      </svg>
+      <input type="text" name="q" value="{{ q }}"
+             placeholder="Buscar por nome ou telefone..."
+             class="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-wa-green">
+    </form>
+  </div>
+
+  <div class="max-w-5xl mx-auto px-6 py-6">
+    {% if contacts %}
+      <div class="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+        {% for contact in contacts %}
+        <div class="flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-wa-green/10 flex items-center justify-center text-wa-dark font-bold text-sm">
+              {{ contact.name|first|upper }}
+            </div>
+            <div>
+              <p class="text-sm font-medium text-gray-800">{{ contact.name }}</p>
+              <p class="text-xs text-gray-500">{{ contact.phone }}{% if contact.email %} · {{ contact.email }}{% endif %}</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-xs text-gray-400">
+              {{ contact.conversations.count }} conversa{{ contact.conversations.count|pluralize:"s" }}
+            </span>
+            <a href="{% url 'contacts:detail' contact.id %}"
+               class="text-xs px-3 py-1.5 text-wa-dark border border-wa-dark/20 rounded-lg hover:bg-wa-dark/5 transition">
+              Ver
+            </a>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="text-center py-20">
+        <div class="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
+          <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+        </div>
+        <h2 class="text-lg font-medium text-gray-700 mb-2">
+          {% if q %}Nenhum contato encontrado para "{{ q }}"{% else %}Nenhum contato ainda{% endif %}
+        </h2>
+        <p class="text-gray-500 text-sm">Os contatos são criados automaticamente quando alguém mensagem via WhatsApp.</p>
+      </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

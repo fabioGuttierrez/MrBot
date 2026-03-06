@@ -1,0 +1,432 @@
+{% extends "base.html" %}
+{% block title %}{{ flow.name }} — Flow Builder{% endblock %}
+{% block body_class %}overflow-hidden{% endblock %}
+
+{% block extra_head %}
+<style>
+  #canvas { cursor: default; background-image: radial-gradient(circle, #d1d5db 1px, transparent 1px); background-size: 24px 24px; }
+  .flow-node { position: absolute; min-width: 160px; cursor: grab; user-select: none; }
+  .flow-node:active { cursor: grabbing; }
+  .flow-node.selected { outline: 2px solid #25D366; outline-offset: 2px; }
+  .connector-line { pointer-events: none; }
+  .port { width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; cursor: crosshair; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col h-screen" x-data="flowBuilder()" x-init="init()">
+
+  <!-- Toolbar -->
+  <div class="flex items-center justify-between bg-white border-b px-4 py-2 z-10 flex-shrink-0">
+    <div class="flex items-center gap-3">
+      <a href="{% url 'flows:index' %}" class="text-gray-400 hover:text-gray-700 text-sm">&#8592; Flows</a>
+      <span class="text-gray-300">|</span>
+      <input x-model="flowName" type="text"
+             class="text-sm font-medium text-gray-800 border-0 focus:ring-0 focus:outline-none bg-transparent w-64"
+             placeholder="Nome do flow" />
+    </div>
+    <div class="flex items-center gap-2">
+      <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+        <input type="checkbox" x-model="isActive" class="rounded accent-green-500" />
+        Ativo
+      </label>
+      <select x-model="linkedBotId"
+              class="text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
+        <option value="">Sem bot vinculado</option>
+        {% for bot in bots %}
+        <option value="{{ bot.id }}" {% if flow.bot_id == bot.id %}selected{% endif %}>{{ bot.name }}</option>
+        {% endfor %}
+      </select>
+      <button @click="saveFlow()"
+              :disabled="saving"
+              class="flex items-center gap-2 px-4 py-1.5 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition">
+        <span x-show="!saving">Salvar</span>
+        <span x-show="saving">Salvando...</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Layout principal -->
+  <div class="flex flex-1 overflow-hidden">
+
+    <!-- Paleta de nos -->
+    <div class="w-52 bg-white border-r flex-shrink-0 overflow-y-auto p-3">
+      <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Adicionar n&#243;</p>
+      {% for nt in node_types %}
+      <button @click="addNode('{{ nt.type }}', '{{ nt.label }}')"
+              class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 border border-gray-100 mb-1.5 transition text-left">
+        <span class="text-base">
+          {% if nt.icon == "chat" %}&#128172;
+          {% elif nt.icon == "split" %}&#128256;
+          {% elif nt.icon == "tag" %}&#128221;
+          {% elif nt.icon == "cpu" %}&#129302;
+          {% elif nt.icon == "person" %}&#128100;
+          {% else %}&#127937;{% endif %}
+        </span>
+        {{ nt.label }}
+      </button>
+      {% endfor %}
+      <hr class="my-3" />
+      <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Vari&#225;veis</p>
+      <div class="space-y-1 text-xs text-gray-500">
+        <p><code class="bg-gray-100 px-1 rounded">{{contact_name}}</code></p>
+        <p><code class="bg-gray-100 px-1 rounded">{{contact_phone}}</code></p>
+        <p><code class="bg-gray-100 px-1 rounded">{{company_name}}</code></p>
+      </div>
+    </div>
+
+    <!-- Canvas -->
+    <div class="flex-1 relative overflow-hidden">
+      <div id="canvas" class="w-full h-full relative"
+           @mousedown="onCanvasMouseDown($event)"
+           @mousemove="onMouseMove($event)"
+           @mouseup="onMouseUp($event)">
+
+        <svg class="absolute inset-0 w-full h-full pointer-events-none" id="svg-connections">
+          <defs>
+            <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#9CA3AF" />
+            </marker>
+          </defs>
+          <template x-for="conn in connections" :key="conn.id">
+            <path :d="conn.path" stroke="#9CA3AF" stroke-width="2" fill="none"
+                  marker-end="url(#arrow)" class="connector-line" />
+          </template>
+        </svg>
+
+        <template x-for="node in nodes" :key="node.id">
+          <div class="flow-node bg-white rounded-xl border-2 shadow-sm p-3"
+               :class="[nodeColor(node.type), selectedNode && selectedNode.id === node.id ? 'selected' : '']"
+               :style="'left:' + node.position.x + 'px; top:' + node.position.y + 'px'"
+               @mousedown.stop="startDrag($event, node)"
+               @click.stop="selectNode(node)">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-semibold text-gray-600 truncate" x-text="node.label || node.type"></span>
+              <button x-show="node.type !== 'start'"
+                      @click.stop="removeNode(node.id)"
+                      class="text-gray-300 hover:text-red-400 text-xs ml-1">&#10005;</button>
+            </div>
+            <p x-show="node.content" class="text-xs text-gray-500 truncate max-w-xs" x-text="node.content"></p>
+            <p x-show="node.type === 'condition' && node.branches"
+               class="text-xs text-gray-500" x-text="(node.branches || []).length + ' branch(es)'"></p>
+            <p x-show="node.type === 'openai'" class="text-xs text-green-600">&#129302; IA</p>
+            <p x-show="node.type === 'transfer_human'" class="text-xs text-orange-600">&#128100; Humano</p>
+            <p x-show="node.type === 'end'" class="text-xs text-red-600">&#127937; Fim</p>
+            <div x-show="node.type !== 'end' && node.type !== 'transfer_human'"
+                 class="port bg-green-400 absolute"
+                 style="right:-6px; top:50%; transform:translateY(-50%)"
+                 @mousedown.stop="startConnection($event, node)"></div>
+            <div x-show="node.type !== 'start'"
+                 class="port bg-gray-400 absolute"
+                 style="left:-6px; top:50%; transform:translateY(-50%)"
+                 @mouseup.stop="endConnection($event, node)"></div>
+          </div>
+        </template>
+
+        <svg x-show="drawingConnection" class="absolute inset-0 w-full h-full pointer-events-none">
+          <path :d="tempConnectionPath" stroke="#25D366" stroke-width="2" stroke-dasharray="6,3" fill="none" />
+        </svg>
+      </div>
+    </div>
+
+    <!-- Painel propriedades -->
+    <div class="w-64 bg-white border-l flex-shrink-0 overflow-y-auto p-4"
+         x-show="selectedNode">
+      <template x-if="selectedNode">
+        <div>
+          <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Propriedades</p>
+
+          <div class="mb-3">
+            <label class="block text-xs text-gray-500 mb-1">Label</label>
+            <input x-model="selectedNode.label" type="text"
+                   class="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400"
+                   @input="updateNode()" />
+          </div>
+
+          <template x-if="selectedNode.type === 'send_message'">
+            <div class="mb-3">
+              <label class="block text-xs text-gray-500 mb-1">Mensagem</label>
+              <textarea x-model="selectedNode.content" rows="4"
+                        class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-green-400 resize-none"
+                        placeholder="Ola {{contact_name}}!"
+                        @input="updateNode()"></textarea>
+            </div>
+          </template>
+
+          <template x-if="selectedNode.type !== 'condition' && selectedNode.type !== 'end' && selectedNode.type !== 'transfer_human'">
+            <div class="mb-3">
+              <label class="block text-xs text-gray-500 mb-1">Pr&#243;ximo n&#243;</label>
+              <select x-model="selectedNode.next" @change="updateNode(); recalcConnections()"
+                      class="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
+                <option value="">&#8212; nenhum &#8212;</option>
+                <template x-for="n in nodes.filter(function(n){ return n.id !== selectedNode.id; })" :key="n.id">
+                  <option :value="n.id" :selected="selectedNode.next === n.id" x-text="n.label || n.id"></option>
+                </template>
+              </select>
+            </div>
+          </template>
+
+          <template x-if="selectedNode.type === 'condition'">
+            <div>
+              <label class="block text-xs text-gray-500 mb-2">Branches</label>
+              <template x-for="(branch, idx) in (selectedNode.branches || [])" :key="idx">
+                <div class="bg-gray-50 rounded-lg p-2 mb-2 text-xs">
+                  <input x-model="branch.label" placeholder="Label" @input="updateNode()"
+                         class="w-full border border-gray-200 rounded px-2 py-1 mb-1 text-xs focus:outline-none" />
+                  <template x-if="!branch.default">
+                    <input x-model="branch.match" placeholder="Pattern (ex: vendas|comprar)" @input="updateNode()"
+                           class="w-full border border-gray-200 rounded px-2 py-1 mb-1 text-xs focus:outline-none" />
+                  </template>
+                  <label class="flex items-center gap-1 mb-1">
+                    <input type="checkbox" x-model="branch.default" @change="updateNode()" class="accent-green-500" />
+                    <span>Default (fallback)</span>
+                  </label>
+                  <select x-model="branch.next" @change="updateNode(); recalcConnections()"
+                          class="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none">
+                    <option value="">&#8212; pr&#243;ximo &#8212;</option>
+                    <template x-for="n in nodes.filter(function(n){ return n.id !== selectedNode.id; })" :key="n.id">
+                      <option :value="n.id" :selected="branch.next === n.id" x-text="n.label || n.id"></option>
+                    </template>
+                  </select>
+                  <button @click="removeBranch(idx)" class="text-red-400 text-xs mt-1 hover:text-red-600">Remover branch</button>
+                </div>
+              </template>
+              <button @click="addBranch()"
+                      class="w-full text-xs text-green-600 border border-green-200 rounded-lg py-1.5 hover:bg-green-50 transition mt-1">
+                + Branch
+              </button>
+            </div>
+          </template>
+
+          <div class="mt-4 pt-3 border-t">
+            <label class="block text-xs text-gray-400 mb-1">ID do n&#243;</label>
+            <p class="text-xs font-mono text-gray-500" x-text="selectedNode.id"></p>
+          </div>
+        </div>
+      </template>
+      <template x-if="!selectedNode">
+        <p class="text-sm text-gray-400 text-center mt-8">Selecione um n&#243; para editar</p>
+      </template>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div x-show="toast.show" x-transition
+       class="fixed bottom-6 right-6 px-4 py-3 rounded-lg shadow-lg text-sm text-white"
+       :class="toast.ok ? 'bg-green-500' : 'bg-red-500'"
+       x-text="toast.message">
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var FLOW_ID = "{{ flow.id }}";
+var SAVE_URL = "{% url 'flows:save' flow.id %}";
+var CSRF    = "{{ csrf_token }}";
+
+function flowBuilder() {
+  return {
+    flowName: "{{ flow.name|escapejs }}",
+    isActive: {{ flow.is_active|yesno:"true,false" }},
+    linkedBotId: "{{ flow.bot_id|default:'' }}",
+    nodes: [],
+    connections: [],
+    selectedNode: null,
+    saving: false,
+    toast: { show: false, ok: true, message: "" },
+
+    dragging: null,
+    dragOffset: { x: 0, y: 0 },
+
+    drawingConnection: false,
+    connectionFrom: null,
+    mouseX: 0,
+    mouseY: 0,
+    tempConnectionPath: "",
+
+    init: function() {
+      var def = {{ definition_json|safe }};
+      this.nodes = def.nodes || [];
+      this.recalcConnections();
+    },
+
+    nodeColor: function(type) {
+      var map = {
+        start:          "border-gray-400",
+        send_message:   "border-blue-400",
+        condition:      "border-yellow-400",
+        set_variable:   "border-purple-400",
+        openai:         "border-green-400",
+        transfer_human: "border-orange-400",
+        end:            "border-red-400"
+      };
+      return map[type] || "border-gray-300";
+    },
+
+    addNode: function(type, label) {
+      var id = type + "_" + Date.now();
+      var node = {
+        id: id, type: type, label: label,
+        position: { x: 300 + Math.random() * 100, y: 150 + Math.random() * 100 },
+        next: null
+      };
+      if (type === "send_message") node.content = "";
+      if (type === "condition") node.branches = [
+        { label: "Opcao 1", match: "palavra|chave", next: null },
+        { label: "Outros", default: true, next: null }
+      ];
+      this.nodes.push(node);
+    },
+
+    removeNode: function(id) {
+      var self = this;
+      this.nodes = this.nodes.filter(function(n) { return n.id !== id; });
+      this.nodes.forEach(function(n) {
+        if (n.next === id) n.next = null;
+        (n.branches || []).forEach(function(b) { if (b.next === id) b.next = null; });
+      });
+      if (this.selectedNode && this.selectedNode.id === id) this.selectedNode = null;
+      this.recalcConnections();
+    },
+
+    selectNode: function(node) { this.selectedNode = node; },
+
+    updateNode: function() {
+      this.nodes = this.nodes.slice();
+      this.recalcConnections();
+    },
+
+    startDrag: function(e, node) {
+      if (this.drawingConnection) return;
+      this.dragging = node;
+      var rect = e.currentTarget.getBoundingClientRect();
+      this.dragOffset = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      this.selectNode(node);
+    },
+
+    onMouseMove: function(e) {
+      if (this.dragging) {
+        var canvas = document.getElementById("canvas").getBoundingClientRect();
+        this.dragging.position.x = e.clientX - canvas.left - this.dragOffset.x;
+        this.dragging.position.y = e.clientY - canvas.top  - this.dragOffset.y;
+        this.recalcConnections();
+      }
+      if (this.drawingConnection) {
+        var canvas = document.getElementById("canvas").getBoundingClientRect();
+        this.mouseX = e.clientX - canvas.left;
+        this.mouseY = e.clientY - canvas.top;
+        this.tempConnectionPath = this._bezier(
+          this.connectionFrom.position.x + 160,
+          this.connectionFrom.position.y + 36,
+          this.mouseX, this.mouseY
+        );
+      }
+    },
+
+    onMouseUp: function(e) {
+      this.dragging = null;
+      if (this.drawingConnection) {
+        this.drawingConnection = false;
+        this.connectionFrom = null;
+        this.tempConnectionPath = "";
+      }
+    },
+
+    onCanvasMouseDown: function(e) {
+      if (e.target.id === "canvas" || e.target.tagName === "svg") {
+        this.selectedNode = null;
+      }
+    },
+
+    startConnection: function(e, node) {
+      e.preventDefault();
+      this.drawingConnection = true;
+      this.connectionFrom = node;
+      var canvas = document.getElementById("canvas").getBoundingClientRect();
+      this.mouseX = e.clientX - canvas.left;
+      this.mouseY = e.clientY - canvas.top;
+    },
+
+    endConnection: function(e, targetNode) {
+      if (!this.drawingConnection || !this.connectionFrom) return;
+      if (this.connectionFrom.id === targetNode.id) { this.drawingConnection = false; return; }
+      this.connectionFrom.next = targetNode.id;
+      this.drawingConnection = false;
+      this.connectionFrom = null;
+      this.recalcConnections();
+    },
+
+    recalcConnections: function() {
+      var conns = [];
+      var self = this;
+      this.nodes.forEach(function(node) {
+        var sx = node.position.x + 160;
+        var sy = node.position.y + 36;
+        if (node.next) {
+          var target = self.nodes.find(function(n) { return n.id === node.next; });
+          if (target) {
+            conns.push({
+              id: node.id + "-" + node.next,
+              path: self._bezier(sx, sy, target.position.x, target.position.y + 36)
+            });
+          }
+        }
+        (node.branches || []).forEach(function(b, i) {
+          if (!b.next) return;
+          var target = self.nodes.find(function(n) { return n.id === b.next; });
+          if (target) {
+            conns.push({
+              id: node.id + "-branch" + i + "-" + b.next,
+              path: self._bezier(sx, sy + i * 16, target.position.x, target.position.y + 36)
+            });
+          }
+        });
+      });
+      this.connections = conns;
+    },
+
+    _bezier: function(x1, y1, x2, y2) {
+      var cx = (x1 + x2) / 2;
+      return "M " + x1 + " " + y1 + " C " + cx + " " + y1 + ", " + cx + " " + y2 + ", " + x2 + " " + y2;
+    },
+
+    addBranch: function() {
+      if (!this.selectedNode) return;
+      if (!this.selectedNode.branches) this.selectedNode.branches = [];
+      this.selectedNode.branches.push({ label: "Novo branch", match: "", next: null });
+      this.updateNode();
+    },
+
+    removeBranch: function(idx) {
+      this.selectedNode.branches.splice(idx, 1);
+      this.updateNode();
+    },
+
+    saveFlow: async function() {
+      this.saving = true;
+      var payload = { name: this.flowName, is_active: this.isActive, nodes: this.nodes };
+      try {
+        var res = await fetch(SAVE_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
+          body: JSON.stringify(payload)
+        });
+        var data = await res.json();
+        this.showToast(data.ok, data.ok ? "Flow salvo!" : (data.error || "Erro ao salvar."));
+      } catch(e) {
+        this.showToast(false, "Erro de conexao.");
+      } finally {
+        this.saving = false;
+      }
+    },
+
+    showToast: function(ok, message) {
+      this.toast = { show: true, ok: ok, message: message };
+      var self = this;
+      setTimeout(function() { self.toast.show = false; }, 3000);
+    }
+  };
+}
+</script>
+{% endblock %}

@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-mrbot}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mrbot123}
     ports:
-      - "5432:5432"
+      - "5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mrbot}"]
       interval: 5s

@@ -36,6 +36,9 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.development
+      - ALLOWED_HOSTS=localhost,127.0.0.1,mrbot.bildee.com.br
     depends_on:
       db:
         condition: service_healthy

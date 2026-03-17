@@ -3,30 +3,31 @@
 
 {% block app_content %}
 <div class="flex-1 overflow-y-auto bg-gray-50 flex items-start justify-center p-6"
-     x-data="{
-       step: 1,
-       total: 4,
-       company: { name: '{{ tenant.name|escapejs }}', phone: '', website: '' },
-       bot: { name: 'Assistente', department: 'general', persona: '' },
-       done: false
-     }">
+     x-data="{ step: {{ initial_step }} }">
 
-  <div class="w-full max-w-xl">
+  <div class="w-full max-w-xl py-4">
 
     <!-- Progress bar -->
     <div class="mb-8">
       <div class="flex items-center justify-between mb-2">
-        <span class="text-sm font-medium text-gray-600" x-text="`Passo ${step} de ${total}`"></span>
-        <span class="text-sm text-gray-400" x-text="`${Math.round((step/total)*100)}% concluído`"></span>
+        <span class="text-sm font-medium text-gray-600" x-text="`Passo ${step} de 4`"></span>
+        <span class="text-sm text-gray-400" x-text="`${Math.round((step/4)*100)}% concluído`"></span>
       </div>
-      <div class="w-full bg-gray-200 rounded-full h-2">
-        <div class="bg-wa-green h-2 rounded-full transition-all duration-300"
-             :style="`width: ${(step/total)*100}%`"></div>
+      <div class="w-full bg-gray-200 rounded-full h-1.5">
+        <div class="bg-wa-green h-1.5 rounded-full transition-all duration-500"
+             :style="`width: ${(step/4)*100}%`"></div>
+      </div>
+      <!-- Marcadores de step -->
+      <div class="flex justify-between mt-2">
+        <span class="text-[10px]" :class="step >= 1 ? 'text-wa-green font-medium' : 'text-gray-400'">Empresa</span>
+        <span class="text-[10px]" :class="step >= 2 ? 'text-wa-green font-medium' : 'text-gray-400'">WhatsApp</span>
+        <span class="text-[10px]" :class="step >= 3 ? 'text-wa-green font-medium' : 'text-gray-400'">Bot</span>
+        <span class="text-[10px]" :class="step >= 4 ? 'text-wa-green font-medium' : 'text-gray-400'">Pronto</span>
       </div>
     </div>
 
-    <!-- STEP 1: Empresa -->
-    <div x-show="step === 1" class="bg-white rounded-2xl border border-gray-200 p-8">
+    <!-- ═══ STEP 1: Empresa ═══ -->
+    <div x-show="step === 1" x-transition class="bg-white rounded-2xl border border-gray-200 p-8">
       <div class="mb-6 text-center">
         <div class="w-14 h-14 rounded-2xl bg-wa-green/10 flex items-center justify-center mx-auto mb-3">
           <svg class="w-7 h-7 text-wa-green" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -35,35 +36,26 @@
           </svg>
         </div>
         <h2 class="text-xl font-bold text-gray-800">Sua empresa</h2>
-        <p class="text-sm text-gray-500 mt-1">Nos conte sobre o seu negócio</p>
+        <p class="text-sm text-gray-500 mt-1">Vamos criar seu ambiente no MrBot</p>
       </div>
 
-      <div class="space-y-4">
+      <form method="post" action="{% url 'tenants:onboarding_create_tenant' %}" class="space-y-4">
+        {% csrf_token %}
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Nome da empresa</label>
-          <input type="text" x-model="company.name" placeholder="Ex: Loja do João"
+          <label class="block text-sm font-medium text-gray-700 mb-1">Nome da empresa <span class="text-red-400">*</span></label>
+          <input type="text" name="company_name" required autofocus
+                 placeholder="Ex: MrBot Atendimento"
                  class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-wa-green">
         </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">WhatsApp principal</label>
-          <input type="text" x-model="company.phone" placeholder="55 11 99999-0000"
-                 class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-wa-green">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Site (opcional)</label>
-          <input type="url" x-model="company.website" placeholder="https://..."
-                 class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-wa-green">
-        </div>
-      </div>
-
-      <button @click="step = 2"
-              class="mt-6 w-full py-3 bg-wa-green hover:bg-wa-dark text-white font-semibold rounded-xl transition">
-        Continuar
-      </button>
+        <button type="submit"
+                class="mt-2 w-full py-3 bg-wa-green hover:bg-wa-dark text-white font-semibold rounded-xl transition text-sm">
+          Criar empresa e continuar →
+        </button>
+      </form>
     </div>
 
-    <!-- STEP 2: Conectar WhatsApp -->
-    <div x-show="step === 2" class="bg-white rounded-2xl border border-gray-200 p-8">
+    <!-- ═══ STEP 2: WhatsApp ═══ -->
+    <div x-show="step === 2" x-transition class="bg-white rounded-2xl border border-gray-200 p-8">
       <div class="mb-6 text-center">
         <div class="w-14 h-14 rounded-2xl bg-green-100 flex items-center justify-center mx-auto mb-3">
           <svg class="w-7 h-7 text-green-600" fill="currentColor" viewBox="0 0 24 24">
@@ -71,39 +63,44 @@
           </svg>
         </div>
         <h2 class="text-xl font-bold text-gray-800">Conectar WhatsApp</h2>
-        <p class="text-sm text-gray-500 mt-1">Vincule o número WhatsApp da sua empresa</p>
+        <p class="text-sm text-gray-500 mt-1">Vincule o número que vai enviar e receber mensagens</p>
       </div>
 
-      <div class="bg-wa-panel rounded-xl p-5 text-center mb-5">
-        <p class="text-sm text-gray-600 mb-4">
-          Acesse <strong>Configurações → WhatsApp</strong> no painel admin para gerar o QR Code
-          e conectar seu número via UazAPI.
-        </p>
-        <a href="/admin/"
-           class="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50 transition">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-          </svg>
-          Ir para Admin
-        </a>
+      <!-- Área do QR code — carregada via HTMX ao clicar em Conectar -->
+      <div id="qr-area" class="mb-5">
+        <div class="text-center py-4">
+          <p class="text-sm text-gray-500 mb-4">Clique no botão abaixo para gerar o QR code de conexão.</p>
+          <button
+            hx-get="{% url 'tenants:onboarding_wa_connect' %}"
+            hx-target="#qr-area"
+            hx-swap="innerHTML"
+            hx-indicator="#qr-loading"
+            class="inline-flex items-center gap-2 px-6 py-3 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-xl text-sm transition shadow-sm shadow-green-200">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/>
+            </svg>
+            Gerar QR Code
+          </button>
+          <div id="qr-loading" class="htmx-indicator mt-3">
+            <div class="w-6 h-6 border-2 border-wa-green border-t-transparent rounded-full animate-spin mx-auto"></div>
+          </div>
+        </div>
       </div>
 
-      <div class="flex gap-3">
+      <div class="flex gap-3 pt-2 border-t border-gray-100">
         <button @click="step = 1"
-                class="flex-1 py-3 border border-gray-200 text-gray-600 font-medium rounded-xl hover:bg-gray-50 transition text-sm">
-          Voltar
+                class="flex-1 py-2.5 border border-gray-200 text-gray-600 font-medium rounded-xl hover:bg-gray-50 transition text-sm">
+          ← Voltar
         </button>
         <button @click="step = 3"
-                class="flex-2 flex-1 py-3 bg-wa-green hover:bg-wa-dark text-white font-semibold rounded-xl transition text-sm">
-          Continuar
+                class="flex-1 py-2.5 text-gray-400 hover:text-gray-600 font-medium rounded-xl hover:bg-gray-50 transition text-sm">
+          Pular por enquanto
         </button>
       </div>
     </div>
 
-    <!-- STEP 3: Configurar Bot -->
-    <div x-show="step === 3" class="bg-white rounded-2xl border border-gray-200 p-8">
+    <!-- ═══ STEP 3: Bot ═══ -->
+    <div x-show="step === 3" x-transition class="bg-white rounded-2xl border border-gray-200 p-8">
       <div class="mb-6 text-center">
         <div class="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center mx-auto mb-3">
           <svg class="w-7 h-7 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -111,90 +108,59 @@
               d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2"/>
           </svg>
         </div>
-        <h2 class="text-xl font-bold text-gray-800">Seu primeiro bot</h2>
-        <p class="text-sm text-gray-500 mt-1">Configure como o bot vai se apresentar</p>
+        <h2 class="text-xl font-bold text-gray-800">Configure seu bot</h2>
+        <p class="text-sm text-gray-500 mt-1">Você pode afinar isso depois em <strong>Bots</strong></p>
       </div>
 
-      <div class="space-y-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Nome do bot</label>
-          <input type="text" x-model="bot.name" placeholder="Ex: Julia, Max, Assistente..."
-                 class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-wa-green">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Área de atuação</label>
-          <select x-model="bot.department"
-                  class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-wa-green">
-            <option value="general">Geral</option>
-            <option value="sales">Vendas</option>
-            <option value="support">Suporte</option>
-            <option value="finance">Financeiro</option>
-            <option value="leads">Captação de Leads</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Personalidade do bot</label>
-          <textarea x-model="bot.persona" rows="3" placeholder="Ex: Sou um assistente simpático e eficiente..."
-                    class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-wa-green resize-none"></textarea>
+      <div class="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-700 mb-4">
+        <div class="flex gap-2">
+          <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          Crie seu primeiro bot agora ou acesse <strong>Bots → Novo Bot</strong> quando quiser.
         </div>
       </div>
 
-      <div class="flex gap-3 mt-6">
+      <div class="flex gap-3">
         <button @click="step = 2"
-                class="flex-1 py-3 border border-gray-200 text-gray-600 font-medium rounded-xl hover:bg-gray-50 transition text-sm">
-          Voltar
+                class="flex-1 py-2.5 border border-gray-200 text-gray-600 font-medium rounded-xl hover:bg-gray-50 transition text-sm">
+          ← Voltar
         </button>
+        <a href="{% url 'bots:create' %}"
+           class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition text-sm text-center">
+          Criar bot →
+        </a>
         <button @click="step = 4"
-                class="flex-1 py-3 bg-wa-green hover:bg-wa-dark text-white font-semibold rounded-xl transition text-sm">
-          Continuar
+                class="flex-1 py-2.5 text-gray-400 hover:text-gray-600 text-sm rounded-xl hover:bg-gray-50 transition">
+          Pular
         </button>
       </div>
     </div>
 
-    <!-- STEP 4: Concluir -->
-    <div x-show="step === 4" class="bg-white rounded-2xl border border-gray-200 p-8 text-center">
+    <!-- ═══ STEP 4: Pronto ═══ -->
+    <div x-show="step === 4" x-transition class="bg-white rounded-2xl border border-gray-200 p-8 text-center">
       <div class="w-16 h-16 rounded-full bg-wa-green/10 flex items-center justify-center mx-auto mb-4">
         <svg class="w-9 h-9 text-wa-green" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
         </svg>
       </div>
-      <h2 class="text-xl font-bold text-gray-800 mb-2">Pronto para começar!</h2>
+      <h2 class="text-xl font-bold text-gray-800 mb-2">Tudo pronto!</h2>
       <p class="text-sm text-gray-500 mb-6">
-        Seu ambiente MrBot está configurado. Crie bots, flows e comece a atender clientes automaticamente.
+        Seu ambiente MrBot está configurado. Gerencie conversas, bots e flows diretamente pelo painel.
       </p>
-
-      <div class="bg-gray-50 rounded-xl p-4 text-left mb-6 space-y-2">
-        <p class="text-sm text-gray-600">
-          <span class="font-medium">Empresa:</span>
-          <span x-text="company.name" class="text-gray-800"></span>
-        </p>
-        <p class="text-sm text-gray-600">
-          <span class="font-medium">Bot:</span>
-          <span x-text="bot.name" class="text-gray-800"></span>
-          (<span x-text="bot.department" class="text-gray-500"></span>)
-        </p>
-      </div>
-
-      <div class="flex flex-col gap-3">
-        <a href="{% url 'bots:create' %}"
-           class="w-full py-3 bg-wa-green hover:bg-wa-dark text-white font-semibold rounded-xl transition text-sm">
-          Criar meu primeiro bot
-        </a>
-        <a href="{% url 'inbox:index' %}"
-           class="w-full py-3 border border-gray-200 text-gray-600 font-medium rounded-xl hover:bg-gray-50 transition text-sm">
-          Ir para o Inbox
-        </a>
-      </div>
+      <a href="{% url 'inbox:index' %}"
+         class="block w-full py-3 bg-wa-green hover:bg-wa-dark text-white font-semibold rounded-xl transition text-sm">
+        Ir para o Inbox →
+      </a>
     </div>
 
-    <!-- Pular -->
+    <!-- Link de saída -->
     <div class="text-center mt-4" x-show="step < 4">
       <a href="{% url 'inbox:index' %}" class="text-xs text-gray-400 hover:text-gray-600 transition">
-        Pular configuração inicial
+        Pular configuração e ir para o Inbox
       </a>
     </div>
 
   </div>
-
 </div>
 {% endblock %}

@@ -60,7 +60,7 @@ PLANS = [
 def index(request):
     tenant = request.tenant
     if not tenant:
-        return redirect("account_login")
+        return redirect("tenants:onboarding")
     subscription = getattr(tenant, "subscription", None)
     return render(request, "billing/index.html", {
         "plans": PLANS,

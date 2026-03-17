@@ -17,7 +17,7 @@ def index(request):
     """Lista todos os flows do tenant."""
     tenant = request.tenant
     if not tenant:
-        return redirect("account_login")
+        return redirect("tenants:onboarding")
     flows = Flow.objects.filter(tenant=tenant).select_related("bot").order_by("name")
     return render(request, "flows/index.html", {"flows": flows})
 
@@ -27,7 +27,7 @@ def builder(request, flow_id=None):
     """Editor visual do flow. Abre existente ou cria novo."""
     tenant = request.tenant
     if not tenant:
-        return redirect("account_login")
+        return redirect("tenants:onboarding")
 
     if flow_id:
         flow = get_object_or_404(Flow, id=flow_id, tenant=tenant)

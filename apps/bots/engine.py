@@ -91,6 +91,7 @@ def _run_openai(conversation, message) -> None:
             phone=conversation.contact.phone,
             message=reply,
             delay=1200,
+            track_id=str(out_message.id),
         )
     except Exception as exc:
         logger.error("Falha ao enviar via UazAPI: %s", exc)

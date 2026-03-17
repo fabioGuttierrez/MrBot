@@ -3,12 +3,40 @@
   <div class="max-w-[70%] px-3 py-2 rounded-2xl text-sm shadow-sm
     {% if message.direction == 'out' %}bg-wa-bubble text-white rounded-br-sm
     {% else %}bg-white text-gray-800 rounded-bl-sm{% endif %}">
-    <p class="whitespace-pre-wrap break-words">{{ message.content }}</p>
+
+    {% if message.media_type == 'image' and message.media_url %}
+      <img src="{{ message.media_url }}" alt="Imagem" class="rounded-lg max-w-full mb-1 cursor-pointer"
+           onclick="window.open('{{ message.media_url }}','_blank')" />
+    {% elif message.media_type == 'video' and message.media_url %}
+      <video controls class="rounded-lg max-w-full mb-1">
+        <source src="{{ message.media_url }}" />
+      </video>
+    {% elif message.media_type == 'document' and message.media_url %}
+      <a href="{{ message.media_url }}" target="_blank"
+         class="flex items-center gap-2 underline mb-1
+           {% if message.direction == 'out' %}text-green-100{% else %}text-wa-dark{% endif %}">
+        <svg class="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"/>
+        </svg>
+        {{ message.content }}
+      </a>
+    {% elif message.media_type in 'audio,ptt' and message.media_url %}
+      <audio controls class="mb-1" style="min-width:220px">
+        <source src="{{ message.media_url }}" />
+      </audio>
+      {% if message.content and 'Áudio' not in message.content %}
+        <p class="whitespace-pre-wrap break-words text-xs mt-1 italic">🎤 {{ message.content }}</p>
+      {% endif %}
+    {% else %}
+      <p class="whitespace-pre-wrap break-words">{{ message.content }}</p>
+    {% endif %}
+
     {% if message.is_concatenated %}
       <p class="text-xs mt-0.5 {% if message.direction == 'out' %}text-green-200{% else %}text-gray-400{% endif %}">
         🔗 msgs agrupadas
       </p>
     {% endif %}
+
     <p class="text-right mt-1 text-xs {% if message.direction == 'out' %}text-green-200{% else %}text-gray-400{% endif %}">
       {{ message.created|time:"H:i" }}
       {% if message.direction == 'out' %}✓✓{% endif %}

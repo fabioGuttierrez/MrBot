@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 def index(request):
     tenant = request.tenant
     if not tenant:
-        return redirect("account_login")
+        return redirect("tenants:onboarding")
     bots = Bot.objects.filter(tenant=tenant).order_by("department", "name")
     return render(request, "bots/index.html", {"bots": bots})
 
@@ -23,7 +23,7 @@ def index(request):
 def create(request):
     tenant = request.tenant
     if not tenant:
-        return redirect("account_login")
+        return redirect("tenants:onboarding")
     if request.method == "POST":
         name = request.POST.get("name", "").strip()
         department = request.POST.get("department", Department.GENERAL)

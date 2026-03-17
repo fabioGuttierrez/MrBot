@@ -13,7 +13,7 @@ from apps.contacts.models import Contact
 def index(request):
     tenant = request.tenant
     if not tenant:
-        return redirect("account_login")
+        return redirect("tenants:onboarding")
 
     now = timezone.now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)

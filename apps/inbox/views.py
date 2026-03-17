@@ -1,4 +1,5 @@
 import logging
+from threading import Thread
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
@@ -41,7 +42,7 @@ def index(request):
     """Página principal do inbox."""
     tenant = request.tenant
     if not tenant:
-        return redirect("account_login")
+        return redirect("tenants:onboarding")
 
     status_filter = request.GET.get("status", "all")
     conversations = _get_conversations(tenant, status_filter)
@@ -59,7 +60,7 @@ def conversation_detail(request, conversation_id):
     """Abre a inbox com uma conversa selecionada no painel direito."""
     tenant = request.tenant
     if not tenant:
-        return redirect("account_login")
+        return redirect("tenants:onboarding")
 
     conversation = get_object_or_404(Conversation, id=conversation_id, tenant=tenant)
 
@@ -67,6 +68,10 @@ def conversation_detail(request, conversation_id):
     if conversation.unread_count > 0:
         conversation.unread_count = 0
         conversation.save(update_fields=["unread_count"])
+
+    # Marca como lido no WhatsApp (background, não bloqueia a resposta)
+    if conversation.session:
+        _mark_read_on_whatsapp(conversation.session, conversation.contact.phone)
 
     messages_qs = (
         conversation.messages
@@ -141,7 +146,11 @@ def send_message(request, conversation_id):
     try:
         from apps.channels_wa.uazapi import get_client_for_session
         client = get_client_for_session(conversation.session)
-        client.send_text(phone=conversation.contact.phone, message=text)
+        client.send_text(
+            phone=conversation.contact.phone,
+            message=text,
+            track_id=str(msg.id),
+        )
     except Exception as exc:
         logger.error("Falha ao enviar msg humana via UazAPI: %s", exc)
 
@@ -194,6 +203,20 @@ def close_conversation(request, conversation_id):
     conversation.status = ConversationStatus.CLOSED
     conversation.save(update_fields=["status"])
     return redirect("inbox:index")
+
+
+def _mark_read_on_whatsapp(session, phone: str) -> None:
+    """Marca mensagens como lidas no WhatsApp em background (não bloqueia a view)."""
+    def _run():
+        try:
+            from apps.channels_wa.uazapi import get_client_for_session
+            client = get_client_for_session(session)
+            chatid = f"{phone}@s.whatsapp.net"
+            client.mark_messages_read(chatid)
+        except Exception as exc:
+            logger.debug("Falha ao marcar como lido no WhatsApp: %s", exc)
+
+    Thread(target=_run, daemon=True).start()
 
 
 def _push_ws(conversation, message):

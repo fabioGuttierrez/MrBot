@@ -158,7 +158,7 @@ def process_concatenated_message(
         session = WhatsAppSession.objects.get(id=session_id)
 
         # 4. Get or create Contact
-        contact, _ = Contact.objects.get_or_create(
+        contact, contact_created = Contact.objects.get_or_create(
             tenant=tenant,
             phone=phone,
             defaults={"name": push_name},
@@ -167,6 +167,13 @@ def process_concatenated_message(
         if push_name and not contact.name:
             contact.name = push_name
             contact.save(update_fields=["name"])
+
+        # Auto-enrich: busca foto e nome do WhatsApp ao criar novo contato
+        if contact_created:
+            enrich_contact_from_whatsapp.apply_async(
+                kwargs={"session_id": str(session.id), "contact_id": str(contact.id)},
+                countdown=5,
+            )
 
         # 5. Get or create Conversation ativa (bot ou humano)
         conversation = (
@@ -240,6 +247,8 @@ def _notify_websocket(conversation, message):
                     "id": str(message.id),
                     "direction": message.direction,
                     "content": message.content,
+                    "media_url": message.media_url,
+                    "media_type": message.media_type,
                     "timestamp": message.created.isoformat(),
                     "is_concatenated": message.is_concatenated,
                 },
@@ -247,3 +256,388 @@ def _notify_websocket(conversation, message):
         )
     except Exception:
         pass  # WebSocket é best-effort; não quebra o fluxo se falhar
+
+
+# ---------------------------------------------------------------------------
+# Mídia: agendamento + processamento
+# ---------------------------------------------------------------------------
+
+def schedule_media_processing(
+    *,
+    tenant_id: str,
+    session_id: str,
+    phone: str,
+    push_name: str,
+    wa_message_id: str,
+    media_type: str,
+):
+    """Agenda o download e processamento de uma mensagem de mídia."""
+    process_media_message.apply_async(
+        kwargs={
+            "tenant_id": tenant_id,
+            "session_id": session_id,
+            "phone": phone,
+            "push_name": push_name,
+            "wa_message_id": wa_message_id,
+            "media_type": media_type,
+        },
+    )
+
+
+@shared_task(bind=True, name="channels_wa.process_media_message", max_retries=3)
+def process_media_message(
+    self,
+    *,
+    tenant_id: str,
+    session_id: str,
+    phone: str,
+    push_name: str,
+    wa_message_id: str,
+    media_type: str,
+):
+    """
+    Baixa a mídia de uma mensagem recebida e persiste no banco.
+    Suporta image, video, audio, ptt, document, sticker.
+    """
+    try:
+        from apps.tenants.models import Tenant
+        from apps.channels_wa.models import WhatsAppSession
+        from apps.channels_wa.uazapi import get_client_for_session
+        from apps.contacts.models import Contact
+        from apps.conversations.models import (
+            Conversation, ConversationStatus, Message, MessageDirection,
+        )
+        from apps.bots.models import Bot
+        from django.utils import timezone
+
+        tenant = Tenant.objects.get(id=tenant_id)
+        session = WhatsAppSession.objects.get(id=session_id)
+        client = get_client_for_session(session)
+
+        # Download da mídia — retorna URL pública
+        transcribe = media_type in ("audio", "ptt")
+        try:
+            result = client.download_message(
+                wa_message_id,
+                return_link=True,
+                generate_mp3=True,
+                transcribe=transcribe,
+            )
+            media_url = result.get("link") or result.get("url") or result.get("mediaUrl", "")
+            transcription = result.get("transcription", "") if transcribe else ""
+        except Exception as exc:
+            logger.warning("Falha ao baixar mídia %s: %s", wa_message_id, exc)
+            media_url = ""
+            transcription = ""
+
+        # Resolve Contact
+        contact, _ = Contact.objects.get_or_create(
+            tenant=tenant,
+            phone=phone,
+            defaults={"name": push_name},
+        )
+        if push_name and not contact.name:
+            contact.name = push_name
+            contact.save(update_fields=["name"])
+
+        # Resolve Conversation ativa
+        conversation = (
+            Conversation.objects.filter(
+                tenant=tenant, contact=contact, session=session,
+            )
+            .exclude(status=ConversationStatus.CLOSED)
+            .order_by("-created")
+            .first()
+        )
+        if not conversation:
+            default_bot = Bot.objects.filter(tenant=tenant, is_active=True).first()
+            conversation = Conversation.objects.create(
+                tenant=tenant,
+                contact=contact,
+                session=session,
+                bot=default_bot,
+                status=ConversationStatus.BOT,
+            )
+
+        # Conteúdo: transcrição (se áudio) ou label do tipo
+        LABELS = {
+            "image": "📷 Imagem recebida",
+            "video": "🎥 Vídeo recebido",
+            "audio": "🎵 Áudio recebido",
+            "ptt": "🎤 Áudio recebido",
+            "document": "📄 Documento recebido",
+            "sticker": "🎉 Figurinha recebida",
+        }
+        content = transcription or LABELS.get(media_type, "📎 Mídia recebida")
+
+        message = Message.objects.create(
+            conversation=conversation,
+            direction=MessageDirection.IN,
+            content=content,
+            wa_message_id=wa_message_id,
+            media_url=media_url,
+            media_type=media_type,
+        )
+
+        conversation.last_message_at = timezone.now()
+        conversation.unread_count += 1
+        conversation.save(update_fields=["last_message_at", "unread_count"])
+
+        _notify_websocket(conversation, message)
+
+        # Aciona bot apenas para áudios transcritos (tem conteúdo de texto)
+        if transcription and conversation.status == ConversationStatus.BOT and conversation.bot:
+            from apps.bots.engine import process_message
+            process_message(conversation=conversation, message=message)
+
+    except Exception as exc:
+        logger.exception("Erro ao processar mídia | wa_id=%s phone=%s", wa_message_id, phone)
+        raise self.retry(exc=exc, countdown=10)
+
+
+# ---------------------------------------------------------------------------
+# Sincronização de histórico
+# ---------------------------------------------------------------------------
+
+@shared_task(bind=True, name="channels_wa.sync_session_history", max_retries=2)
+def sync_session_history(self, *, session_id: str, max_chats: int = 30, messages_per_chat: int = 50):
+    """
+    Importa histórico de conversas ao conectar uma sessão WhatsApp.
+    Busca os últimos N chats e suas mensagens via API do UazAPI.
+    Evita duplicatas via wa_message_id.
+    """
+    import datetime
+    try:
+        from apps.channels_wa.models import WhatsAppSession
+        from apps.channels_wa.uazapi import get_client_for_session
+        from apps.tenants.models import Tenant
+        from apps.contacts.models import Contact
+        from apps.conversations.models import (
+            Conversation, ConversationStatus, Message, MessageDirection,
+        )
+        from apps.bots.models import Bot
+        from django.utils import timezone
+
+        session = WhatsAppSession.objects.select_related("tenant").get(id=session_id)
+        tenant = session.tenant
+        client = get_client_for_session(session)
+
+        logger.info("Iniciando sync de histórico | session=%s tenant=%s", session_id, tenant.slug)
+
+        # 1. Busca lista de chats
+        result = client.find_chats(limit=max_chats, wa_isGroup=False)
+        chats = (
+            result.get("chats") or result.get("data") or result
+            if isinstance(result, dict) else result
+        )
+        if not isinstance(chats, list):
+            logger.warning("sync_session_history: resposta inesperada: %s", type(result))
+            return
+
+        default_bot = Bot.objects.filter(tenant=tenant, is_active=True).first()
+        total_imported = 0
+
+        for chat in chats:
+            chatid = chat.get("wa_chatid") or chat.get("chatid", "")
+            if not chatid or chatid.endswith("@g.us"):
+                continue
+
+            phone = chatid.split("@")[0]
+            if not phone or not phone.isdigit():
+                continue
+
+            name = chat.get("wa_contactName") or chat.get("wa_name") or ""
+
+            contact, _ = Contact.objects.get_or_create(
+                tenant=tenant,
+                phone=phone,
+                defaults={"name": name},
+            )
+            if name and not contact.name:
+                contact.name = name
+                contact.save(update_fields=["name"])
+
+            # Pega ou cria conversa ativa
+            conversation = (
+                Conversation.objects.filter(tenant=tenant, contact=contact, session=session)
+                .exclude(status=ConversationStatus.CLOSED)
+                .order_by("-created")
+                .first()
+            )
+            if not conversation:
+                conversation = Conversation.objects.create(
+                    tenant=tenant,
+                    contact=contact,
+                    session=session,
+                    bot=default_bot,
+                    status=ConversationStatus.BOT,
+                )
+
+            # 2. Busca mensagens do chat
+            try:
+                msg_result = client.find_messages(chatid, limit=messages_per_chat)
+                messages = (
+                    msg_result.get("messages", [])
+                    if isinstance(msg_result, dict) else []
+                )
+            except Exception as exc:
+                logger.warning("Falha ao buscar msgs de %s: %s", chatid, exc)
+                continue
+
+            last_dt = None
+
+            for msg_data in reversed(messages):  # mais antigas primeiro
+                wa_id = msg_data.get("messageid") or msg_data.get("id", "")
+                if not wa_id:
+                    continue
+
+                # Evita duplicatas
+                if Message.objects.filter(wa_message_id=wa_id).exists():
+                    continue
+
+                text = (msg_data.get("text") or "").strip()
+                msg_type = msg_data.get("messageType", "")
+                if not text and msg_type not in ("conversation", "extendedTextMessage"):
+                    # Mídia sem texto — registra placeholder, URL será vazia
+                    LABELS = {
+                        "image": "📷 Imagem",
+                        "video": "🎥 Vídeo",
+                        "audio": "🎵 Áudio",
+                        "ptt": "🎤 Áudio",
+                        "document": "📄 Documento",
+                        "sticker": "🎉 Figurinha",
+                    }
+                    text = LABELS.get(msg_type, "📎 Mídia")
+
+                if not text:
+                    continue
+
+                from_me = msg_data.get("fromMe", False)
+                direction = MessageDirection.OUT if from_me else MessageDirection.IN
+
+                ts = msg_data.get("messageTimestamp")
+                msg_dt = (
+                    datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
+                    if ts else timezone.now()
+                )
+
+                msg = Message.objects.create(
+                    conversation=conversation,
+                    direction=direction,
+                    content=text,
+                    wa_message_id=wa_id,
+                    media_type=msg_type if msg_type in ("image", "video", "audio", "ptt", "document", "sticker") else "",
+                )
+                # Ajusta o timestamp para o da mensagem original
+                Message.objects.filter(id=msg.id).update(created=msg_dt, modified=msg_dt)
+
+                last_dt = msg_dt
+                total_imported += 1
+
+            if last_dt:
+                Conversation.objects.filter(id=conversation.id).update(last_message_at=last_dt)
+
+        logger.info(
+            "Sync concluído | session=%s | %d mensagens importadas de %d chats",
+            session_id, total_imported, len(chats),
+        )
+
+    except Exception as exc:
+        logger.exception("Erro em sync_session_history | session=%s", session_id)
+        raise self.retry(exc=exc, countdown=30)
+
+
+# ---------------------------------------------------------------------------
+# Enriquecimento automático de contatos
+# ---------------------------------------------------------------------------
+
+@shared_task(bind=True, name="channels_wa.enrich_contact_from_whatsapp", max_retries=2)
+def enrich_contact_from_whatsapp(self, *, session_id: str, contact_id: str):
+    """
+    Busca nome e foto de perfil do WhatsApp e atualiza o Contact no banco.
+    Chamada automaticamente ao criar novo contato via webhook.
+    """
+    try:
+        from apps.channels_wa.models import WhatsAppSession
+        from apps.channels_wa.uazapi import get_client_for_session
+        from apps.contacts.models import Contact
+
+        session = WhatsAppSession.objects.get(id=session_id)
+        contact = Contact.objects.get(id=contact_id)
+        client = get_client_for_session(session)
+
+        chatid = f"{contact.phone}@s.whatsapp.net"
+        data = client.get_chat_details(chatid)
+
+        updated = []
+        name = (
+            data.get("name") or data.get("pushName")
+            or data.get("wa_contactName") or data.get("wa_name", "")
+        )
+        avatar_url = (
+            data.get("profilePicUrl") or data.get("avatar")
+            or data.get("wa_profilePicUrl", "")
+        )
+
+        if name and not contact.name:
+            contact.name = name
+            updated.append("name")
+        if avatar_url and not contact.avatar_url:
+            contact.avatar_url = avatar_url
+            updated.append("avatar_url")
+        if updated:
+            contact.save(update_fields=updated)
+            logger.info("Contato %s enriquecido: %s", contact.phone, updated)
+
+    except Exception as exc:
+        logger.warning("Erro ao enriquecer contato %s: %s", contact_id, exc)
+        raise self.retry(exc=exc, countdown=15)
+
+
+# ---------------------------------------------------------------------------
+# Campanhas em massa
+# ---------------------------------------------------------------------------
+
+@shared_task(bind=True, name="channels_wa.send_campaign_task", max_retries=1)
+def send_campaign_task(
+    self,
+    *,
+    session_id: str,
+    phones: list[str],
+    message: str,
+    campaign_name: str = "MrBot Campaign",
+):
+    """
+    Envia mensagem em massa via UazAPI /sender/simple.
+    Fallback: envia individualmente com delay se a API de campanha falhar.
+    """
+    try:
+        from apps.channels_wa.models import WhatsAppSession
+        from apps.channels_wa.uazapi import get_client_for_session, UazAPIError
+
+        session = WhatsAppSession.objects.get(id=session_id)
+        client = get_client_for_session(session)
+
+        logger.info(
+            "Campanha '%s' iniciada | session=%s | %d destinatários",
+            campaign_name, session_id, len(phones),
+        )
+
+        try:
+            # Tenta usar o endpoint nativo de campanha
+            client.send_campaign(numbers=phones, message=message, name=campaign_name)
+            logger.info("Campanha '%s' enviada via /sender/simple.", campaign_name)
+        except UazAPIError:
+            # Fallback: envia um por um com delay
+            import time
+            logger.warning("Fallback: enviando campanha individualmente para %d números.", len(phones))
+            for phone in phones:
+                try:
+                    client.send_text(phone=phone, message=message, delay=2000)
+                    time.sleep(3)
+                except Exception as exc:
+                    logger.error("Falha ao enviar para %s: %s", phone, exc)
+
+    except Exception as exc:
+        logger.exception("Erro na campanha '%s' | session=%s", campaign_name, session_id)
+        raise self.retry(exc=exc, countdown=60)

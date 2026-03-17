@@ -4,6 +4,7 @@ Flow Engine — máquina de estados para execução de fluxos de atendimento.
 Tipos de nó suportados:
   start          → ponto de entrada do flow
   send_message   → envia mensagem estática (suporta variáveis {{nome}})
+  send_menu      → envia mensagem interativa com botões
   condition      → avalia a mensagem do contato via regex/keyword e ramifica
   set_variable   → salva um valor no contexto da conversa
   openai         → passa o controle para o OpenAI (modo IA livre)
@@ -14,7 +15,7 @@ Ciclo de execução (por mensagem recebida):
   1. Pega o nó atual da conversa (current_flow_node)
   2. Se for nó de condição → avalia a msg → salta para o próximo nó
   3. Executa o novo nó:
-     • Nós imediatos (send_message, set_variable) → executa e avança
+     • Nós imediatos (send_message, send_menu, set_variable) → executa e avança
      • Nós terminais (openai, transfer_human, end) → para o loop
   4. Persiste o nó atual na conversa
 """
@@ -110,6 +111,40 @@ def _exec_condition(node: dict, message: str, **_) -> NodeResult:
     return NodeResult(action="wait", next_node=node.get("id"))
 
 
+def _exec_send_menu(node: dict, context: dict, **_) -> NodeResult:
+    """
+    Envia mensagem interativa com botões via WhatsApp.
+    Definição do nó:
+      {
+        "type": "send_menu",
+        "title": "Menu Principal",
+        "body": "Como posso ajudar, {{contact_name}}?",
+        "footer": "Escolha uma opção",       (opcional)
+        "buttons": [
+          {"id": "1", "text": "Suporte"},
+          {"id": "2", "text": "Vendas"},
+          {"id": "3", "text": "Falar com humano"}
+        ],
+        "next": "aguarda_resposta"
+      }
+    """
+    title = _render_template(node.get("title", ""), context)
+    body = _render_template(node.get("body", ""), context)
+    footer = _render_template(node.get("footer", ""), context)
+    buttons = node.get("buttons", [])
+    return NodeResult(
+        action="send",
+        next_node=node.get("next"),
+        message={
+            "type": "menu",
+            "title": title,
+            "body": body,
+            "footer": footer,
+            "buttons": buttons,
+        },
+    )
+
+
 def _exec_set_variable(node: dict, **_) -> NodeResult:
     var_name = node.get("variable", "")
     var_value = node.get("value", "")
@@ -136,6 +171,7 @@ def _exec_end(node: dict, **_) -> NodeResult:
 _EXECUTORS = {
     "start":           _exec_start,
     "send_message":    _exec_send_message,
+    "send_menu":       _exec_send_menu,
     "condition":       _exec_condition,
     "set_variable":    _exec_set_variable,
     "openai":          _exec_openai,
@@ -274,25 +310,53 @@ def run_flow(*, conversation, message_text: str) -> str:
 # Helpers de saída
 # ---------------------------------------------------------------------------
 
-def _save_and_send_messages(conversation, messages: list[str], client):
-    """Salva e envia cada mensagem do flow."""
+def _save_and_send_messages(conversation, messages: list, client):
+    """Salva e envia cada mensagem do flow (texto ou menu interativo)."""
     from apps.conversations.models import Message, MessageDirection
     from apps.channels_wa.tasks import _notify_websocket
 
-    for text in messages:
-        msg = Message.objects.create(
-            conversation=conversation,
-            direction=MessageDirection.OUT,
-            content=text,
-        )
-        try:
-            client.send_text_with_delay(
-                phone=conversation.contact.phone,
-                message=text,
-                delay=800,
+    for msg_data in messages:
+        if isinstance(msg_data, dict) and msg_data.get("type") == "menu":
+            # Mensagem interativa com botões
+            title = msg_data["title"]
+            body = msg_data["body"]
+            footer = msg_data.get("footer", "")
+            buttons = msg_data["buttons"]
+            labels = " | ".join(b.get("text", "") for b in buttons)
+            content = f"[Menu] {title}\n{body}\n➤ {labels}"
+
+            msg = Message.objects.create(
+                conversation=conversation,
+                direction=MessageDirection.OUT,
+                content=content,
             )
-        except Exception as exc:
-            logger.error("Flow: falha ao enviar msg via UazAPI: %s", exc)
+            try:
+                client.send_menu(
+                    phone=conversation.contact.phone,
+                    title=title,
+                    body=body,
+                    buttons=buttons,
+                    footer=footer,
+                )
+            except Exception as exc:
+                logger.error("Flow: falha ao enviar menu via UazAPI: %s", exc)
+        else:
+            # Mensagem de texto simples
+            text = str(msg_data)
+            msg = Message.objects.create(
+                conversation=conversation,
+                direction=MessageDirection.OUT,
+                content=text,
+            )
+            try:
+                client.send_text_with_delay(
+                    phone=conversation.contact.phone,
+                    message=text,
+                    delay=800,
+                    track_id=str(msg.id),
+                )
+            except Exception as exc:
+                logger.error("Flow: falha ao enviar msg via UazAPI: %s", exc)
 
         _notify_websocket(conversation, msg)
 

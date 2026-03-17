@@ -33,8 +33,11 @@ from .models import WhatsAppSession
 
 logger = logging.getLogger(__name__)
 
-# Eventos que processamos — v2.0 usa "messages" (sem sufixo .upsert)
-HANDLED_EVENTS = {"messages"}
+# Eventos que processamos
+HANDLED_EVENTS = {"messages", "connection"}
+
+# Tipos de mensagem que contêm mídia (sem texto)
+MEDIA_TYPES = {"image", "video", "audio", "ptt", "document", "sticker"}
 
 
 @csrf_exempt
@@ -81,14 +84,46 @@ def webhook_receiver(request, tenant_slug: str, instance_id: str):
         is_active=True,
     )
 
-    _handle_message_event(tenant, session, payload)
+    if event == "connection":
+        _handle_connection_event(session, payload)
+    else:
+        _handle_message_event(tenant, session, payload)
 
     return JsonResponse({"ok": True})
 
 
+def _handle_connection_event(session, payload: dict):
+    """
+    Trata eventos de conexão/desconexão da instância.
+    Quando conectado, dispara sync do histórico em background.
+    """
+    from .tasks import sync_session_history
+    from .models import SessionStatus
+
+    data = payload.get("data", {})
+    status = (data.get("status") or data.get("state") or "").lower()
+
+    logger.info("Evento de conexão | session=%s status=%s", session.id, status)
+
+    if status in ("connected", "open"):
+        session.status = SessionStatus.CONNECTED
+        session.save(update_fields=["status"])
+        # Dispara sincronização de histórico em background
+        sync_session_history.delay(session_id=str(session.id))
+        logger.info("Sync de histórico agendado | session=%s", session.id)
+
+    elif status in ("disconnected", "close", "logout"):
+        session.status = SessionStatus.DISCONNECTED
+        session.save(update_fields=["status"])
+
+    elif status in ("connecting", "qr"):
+        session.status = SessionStatus.CONNECTING
+        session.save(update_fields=["status"])
+
+
 def _handle_message_event(tenant, session, payload: dict):
-    """Extrai dados do payload v2.0 e aciona a lógica de concatenação."""
-    from .tasks import schedule_message_processing
+    """Extrai dados do payload v2.0 e aciona a lógica de processamento."""
+    from .tasks import schedule_message_processing, schedule_media_processing
 
     data = payload.get("data", {})
 
@@ -113,27 +148,45 @@ def _handle_message_event(tenant, session, payload: dict):
         logger.debug("chatid inválido ou não numérico: %s", chat_id)
         return
 
-    text: str = data.get("text", "").strip()
-    if not text:
-        # Tipos sem texto (áudio, imagem, etc.) — ignora por enquanto
-        msg_type = data.get("messageType", "desconhecido")
-        logger.debug("Mensagem sem texto (%s) de %s, ignorando.", msg_type, phone)
-        return
-
+    msg_type: str = data.get("messageType", "")
     push_name: str = data.get("senderName", "")
     wa_message_id: str = data.get("messageid", "")
+    text: str = data.get("text", "").strip()
 
-    logger.info(
-        "Webhook v2.0 | tenant=%s | phone=%s | tipo=%s | msg=%.80s",
-        tenant.slug, phone, data.get("messageType", "?"), text,
-    )
+    # ── Roteamento por tipo ──────────────────────────────────────────
+    if text:
+        # Mensagem de texto normal → buffer de concatenação
+        logger.info(
+            "Webhook v2.0 | tenant=%s | phone=%s | tipo=%s | msg=%.80s",
+            tenant.slug, phone, msg_type, text,
+        )
+        schedule_message_processing(
+            tenant_id=str(tenant.id),
+            session_id=str(session.id),
+            phone=phone,
+            text=text,
+            push_name=push_name,
+            wa_message_id=wa_message_id,
+            concat_delay=tenant.message_concat_delay,
+        )
 
-    schedule_message_processing(
-        tenant_id=str(tenant.id),
-        session_id=str(session.id),
-        phone=phone,
-        text=text,
-        push_name=push_name,
-        wa_message_id=wa_message_id,
-        concat_delay=tenant.message_concat_delay,
-    )
+    elif msg_type in MEDIA_TYPES and wa_message_id:
+        # Mensagem de mídia sem texto → download assíncrono
+        logger.info(
+            "Webhook v2.0 | tenant=%s | phone=%s | mídia=%s | id=%s",
+            tenant.slug, phone, msg_type, wa_message_id,
+        )
+        schedule_media_processing(
+            tenant_id=str(tenant.id),
+            session_id=str(session.id),
+            phone=phone,
+            push_name=push_name,
+            wa_message_id=wa_message_id,
+            media_type=msg_type,
+        )
+
+    else:
+        logger.debug(
+            "Mensagem sem texto nem mídia reconhecida (tipo=%s) de %s — ignorando.",
+            msg_type, phone,
+        )

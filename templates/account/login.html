@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+
+{% block title %}Login — MrBot{% endblock %}
+{% block body_class %}bg-gradient-to-br from-[#0a1628] via-[#0d2137] to-[#0a1628]{% endblock %}
+
+{% block content %}
+<div class="min-h-screen flex">
+
+  <!-- Painel esquerdo (branding) — oculto em mobile -->
+  <div class="hidden lg:flex lg:w-1/2 flex-col justify-between p-12 relative overflow-hidden">
+    <!-- Círculos decorativos -->
+    <div class="absolute -top-24 -left-24 w-96 h-96 bg-[#25D366]/10 rounded-full blur-3xl"></div>
+    <div class="absolute bottom-0 right-0 w-80 h-80 bg-[#128C7E]/10 rounded-full blur-3xl"></div>
+
+    <!-- Logo -->
+    <div class="flex items-center gap-3 relative z-10">
+      <div class="w-10 h-10 rounded-xl bg-[#25D366] flex items-center justify-center shadow-lg shadow-[#25D366]/30">
+        <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+          <path d="M12 0C5.373 0 0 5.373 0 12c0 2.125.557 4.126 1.528 5.858L0 24l6.335-1.508A11.93 11.93 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.8 9.8 0 01-4.964-1.349l-.356-.211-3.762.896.958-3.65-.232-.375A9.795 9.795 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182S21.818 6.57 21.818 12 17.43 21.818 12 21.818z"/>
+        </svg>
+      </div>
+      <span class="text-white font-bold text-xl tracking-wide">MrBot</span>
+    </div>
+
+    <!-- Tagline central -->
+    <div class="relative z-10">
+      <h2 class="text-4xl font-bold text-white leading-tight mb-4">
+        Atendimento inteligente<br/>
+        <span class="text-[#25D366]">via WhatsApp</span>
+      </h2>
+      <p class="text-gray-400 text-lg leading-relaxed">
+        Automatize conversas, gerencie agentes e escale seu atendimento com IA.
+      </p>
+
+      <!-- Badges de recursos -->
+      <div class="mt-8 flex flex-col gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-5 h-5 rounded-full bg-[#25D366]/20 flex items-center justify-center flex-shrink-0">
+            <svg class="w-3 h-3 text-[#25D366]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+            </svg>
+          </div>
+          <span class="text-gray-300 text-sm">Bots com IA integrada</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="w-5 h-5 rounded-full bg-[#25D366]/20 flex items-center justify-center flex-shrink-0">
+            <svg class="w-3 h-3 text-[#25D366]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+            </svg>
+          </div>
+          <span class="text-gray-300 text-sm">Inbox para agentes humanos</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="w-5 h-5 rounded-full bg-[#25D366]/20 flex items-center justify-center flex-shrink-0">
+            <svg class="w-3 h-3 text-[#25D366]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+            </svg>
+          </div>
+          <span class="text-gray-300 text-sm">Análises em tempo real</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-gray-600 text-xs relative z-10">© 2025 MrBot. Todos os direitos reservados.</p>
+  </div>
+
+  <!-- Painel direito (formulário) -->
+  <div class="w-full lg:w-1/2 flex items-center justify-center p-6 lg:p-12">
+    <div class="w-full max-w-sm">
+
+      <!-- Header mobile -->
+      <div class="flex lg:hidden items-center justify-center gap-2 mb-8">
+        <div class="w-9 h-9 rounded-xl bg-[#25D366] flex items-center justify-center">
+          <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+            <path d="M12 0C5.373 0 0 5.373 0 12c0 2.125.557 4.126 1.528 5.858L0 24l6.335-1.508A11.93 11.93 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.8 9.8 0 01-4.964-1.349l-.356-.211-3.762.896.958-3.65-.232-.375A9.795 9.795 0 012.182 12C2.182 6.57 6.57 2.182 12 2.182S21.818 6.57 21.818 12 17.43 21.818 12 21.818z"/>
+          </svg>
+        </div>
+        <span class="text-white font-bold text-lg">MrBot</span>
+      </div>
+
+      <!-- Card -->
+      <div class="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-8 shadow-2xl">
+        <div class="mb-7">
+          <h1 class="text-white text-2xl font-bold">Bem-vindo de volta</h1>
+          <p class="text-gray-400 text-sm mt-1">Entre com sua conta para continuar</p>
+        </div>
+
+        <form method="post" action="{% url 'account_login' %}" class="space-y-4">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.GET.next|default:'/inbox/' }}" />
+
+          <!-- E-mail -->
+          <div>
+            <label class="block text-gray-300 text-xs font-medium mb-1.5 uppercase tracking-wide">E-mail</label>
+            <input
+              type="email"
+              name="login"
+              required
+              autofocus
+              placeholder="seu@email.com"
+              class="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/15 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-[#25D366] focus:ring-1 focus:ring-[#25D366] transition-colors"
+            />
+          </div>
+
+          <!-- Senha -->
+          <div>
+            <label class="block text-gray-300 text-xs font-medium mb-1.5 uppercase tracking-wide">Senha</label>
+            <input
+              type="password"
+              name="password"
+              required
+              placeholder="••••••••"
+              class="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/15 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-[#25D366] focus:ring-1 focus:ring-[#25D366] transition-colors"
+            />
+          </div>
+
+          <!-- Erro -->
+          {% if form.errors %}
+            <div class="flex items-center gap-2 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2.5">
+              <svg class="w-4 h-4 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <p class="text-red-400 text-sm">E-mail ou senha inválidos.</p>
+            </div>
+          {% endif %}
+
+          <!-- Botão -->
+          <button
+            type="submit"
+            class="w-full py-3 bg-[#25D366] hover:bg-[#128C7E] text-white font-semibold rounded-xl transition-colors text-sm mt-2 shadow-lg shadow-[#25D366]/20">
+            Entrar
+          </button>
+        </form>
+
+        <p class="text-center text-sm text-gray-500 mt-6">
+          Não tem conta?
+          <a href="{% url 'account_signup' %}" class="text-[#25D366] font-medium hover:text-[#128C7E] transition-colors">Cadastre-se</a>
+        </p>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

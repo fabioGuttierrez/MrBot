@@ -64,7 +64,8 @@ def webhook_receiver(request, tenant_slug: str, instance_id: str):
     except json.JSONDecodeError:
         return JsonResponse({"error": "invalid json"}, status=400)
 
-    event = payload.get("event", "")
+    # Normaliza event: Evolution v2.3+ envia "messages.upsert", versões antigas "MESSAGES_UPSERT"
+    event = payload.get("event", "").replace(".", "_").upper()
 
     # Ignora eventos não tratados silenciosamente
     if event not in HANDLED_EVENTS:

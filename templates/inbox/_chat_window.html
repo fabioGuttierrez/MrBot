@@ -73,22 +73,32 @@
   {% if conversation.status == 'closed' %}
     <p class="text-center text-sm text-gray-400 py-2">Conversa encerrada</p>
   {% else %}
-    <div class="flex items-end gap-2 bg-white rounded-2xl border border-gray-200 px-4 py-2"
-         x-data>
-      <textarea
-        x-model="$store.activeChat.draft"
-        @keydown.enter.prevent="if(!$event.shiftKey) $store.activeChat.send()"
-        rows="1"
-        placeholder="Digite uma mensagem... (Enter para enviar, Shift+Enter para nova linha)"
-        class="flex-1 text-sm resize-none focus:outline-none max-h-32 overflow-y-auto bg-transparent"
-      ></textarea>
-      <button @click="$store.activeChat.send()"
-              class="w-9 h-9 flex-shrink-0 rounded-full bg-wa-green flex items-center justify-center hover:bg-wa-dark transition">
-        <svg class="w-4 h-4 text-white rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
-        </svg>
-      </button>
-    </div>
+    <form
+      x-data="{ draft: '' }"
+      hx-post="{% url 'inbox:send' conversation.id %}"
+      hx-target="#ws-messages"
+      hx-swap="beforeend"
+      hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+      @htmx:after-request="draft = ''; $el.querySelector('textarea').style.height = 'auto'; document.getElementById('scroll-anchor')?.scrollIntoView({behavior:'smooth'})"
+    >
+      <div class="flex items-end gap-2 bg-white rounded-2xl border border-gray-200 px-4 py-2">
+        <textarea
+          name="text"
+          x-model="draft"
+          @keydown.enter.prevent="if(!$event.shiftKey) $el.closest('form').requestSubmit()"
+          @input="$el.style.height = 'auto'; $el.style.height = $el.scrollHeight + 'px'"
+          rows="1"
+          placeholder="Digite uma mensagem... (Enter para enviar, Shift+Enter para nova linha)"
+          class="flex-1 text-sm resize-none focus:outline-none max-h-32 overflow-y-auto bg-transparent"
+        ></textarea>
+        <button type="submit"
+                class="w-9 h-9 flex-shrink-0 rounded-full bg-wa-green flex items-center justify-center hover:bg-wa-dark transition">
+          <svg class="w-4 h-4 text-white rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+          </svg>
+        </button>
+      </div>
+    </form>
     <p class="text-xs text-gray-400 mt-1 text-center">
       {% if conversation.status == 'bot' %}Este chat está com o bot. Assuma para enviar mensagens.
       {% elif conversation.status == 'pending' %}Aguardando agente.

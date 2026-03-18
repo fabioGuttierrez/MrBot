@@ -635,7 +635,8 @@ def fetch_instance(instance_name: str) -> dict:
     }
     try:
         with httpx.Client(timeout=20.0) as client:
-            resp = client.get(url, params={"instanceName": instance_name}, headers=headers)
+            # Busca todas as instâncias (v2.3.7 não suporta filtro ?instanceName=)
+            resp = client.get(url, headers=headers)
             resp.raise_for_status()
             data = resp.json()
             items = data if isinstance(data, list) else [data]

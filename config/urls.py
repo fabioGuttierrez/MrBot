@@ -19,7 +19,7 @@ urlpatterns = [
     path("dashboard/", include("apps.dashboard.urls", namespace="dashboard")),
     path("", include("apps.tenants.urls", namespace="tenants")),
 
-    # Webhook UazAPI
+    # Webhook Evolution API
     path("webhook/", include("apps.channels_wa.urls", namespace="channels_wa")),
 
     # Widget público (sem autenticação)

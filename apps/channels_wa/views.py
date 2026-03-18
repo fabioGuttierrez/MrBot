@@ -16,7 +16,7 @@ from django.conf import settings
 
 from apps.tenants.models import Tenant
 from .models import WhatsAppSession, SessionStatus
-from .uazapi import UazAPIClient, UazAPIError, create_instance, _normalize_message_type
+from .evolution import EvolutionClient, EvolutionError, create_instance, fetch_instance, _normalize_message_type
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ HANDLED_EVENTS = {"MESSAGES_UPSERT", "CONNECTION_UPDATE", "QRCODE_UPDATED"}
 
 def _fix_encoding(text: str) -> str:
     """
-    Corrige double-encoding Latin-1/UTF-8 que o UazAPI às vezes envia.
+    Corrige double-encoding Latin-1/UTF-8 que a Evolution API às vezes envia.
 
     O Baileys (lib interna) às vezes interpreta os bytes UTF-8 do WhatsApp
     como Latin-1 antes de embutir no JSON, resultando em strings como
@@ -47,7 +47,7 @@ MEDIA_TYPES = {"image", "video", "audio", "ptt", "document", "sticker"}
 @require_POST
 def webhook_receiver(request, tenant_slug: str, instance_id: str):
     """
-    Recebe eventos da uazapiGO v2.0.
+    Recebe eventos da Evolution API v2.
     URL: /webhook/<tenant_slug>/<instance_id>/
 
     O instance_id na URL serve para roteamento e validação.
@@ -133,7 +133,7 @@ def _handle_qrcode_event(session, payload: dict):
     Atualiza o QR code em cache Redis para que o polling o exiba imediatamente.
     """
     from django.core.cache import cache
-    from .uazapi import _qr_cache_key, QR_CACHE_TTL
+    from .evolution import _qr_cache_key, QR_CACHE_TTL
 
     data = payload.get("data", {})
     qr_base64 = data.get("qrcode", {}).get("base64", "")
@@ -254,6 +254,22 @@ def session_reconnect(request):
         instance_name = f"{tenant.slug}-wa"
         try:
             data = create_instance(instance_name)
+        except EvolutionError as exc:
+            # Instância já existe na Evolution API — recupera em vez de recriar
+            if "already in use" in str(exc).lower():
+                try:
+                    data = fetch_instance(instance_name)
+                except EvolutionError as fetch_exc:
+                    return render(request, "channels_wa/_session_qr.html", {
+                        "status": "error",
+                        "error": str(fetch_exc),
+                    })
+            else:
+                return render(request, "channels_wa/_session_qr.html", {
+                    "status": "error",
+                    "error": str(exc),
+                })
+        try:
             session = WhatsAppSession.objects.create(
                 tenant=tenant,
                 name=f"WhatsApp — {tenant.name}",
@@ -264,21 +280,21 @@ def session_reconnect(request):
                 f"{settings.APP_BASE_URL.rstrip('/')}"
                 f"/webhook/{tenant.slug}/{session.instance_id}/"
             )
-            client = UazAPIClient(session.instance_id, session.token)
+            client = EvolutionClient(session.instance_id, session.token)
             client.set_webhook(webhook_url)
-        except UazAPIError as exc:
+        except EvolutionError as exc:
             return render(request, "channels_wa/_session_qr.html", {
                 "status": "error",
                 "error": str(exc),
             })
 
-    client = UazAPIClient(session.instance_id, session.token)
+    client = EvolutionClient(session.instance_id, session.token)
     try:
         resp = client.connect()
         instance_data = resp.get("instance", {})
         status = instance_data.get("status", "connecting")
         qr_code = instance_data.get("qrcode", "")
-    except UazAPIError as exc:
+    except EvolutionError as exc:
         return render(request, "channels_wa/_session_qr.html", {
             "status": "error",
             "error": str(exc),
@@ -302,7 +318,7 @@ def session_status(request):
     if not session:
         return render(request, "channels_wa/_session_qr.html", {"status": "no_session"})
 
-    client = UazAPIClient(session.instance_id, session.token)
+    client = EvolutionClient(session.instance_id, session.token)
     try:
         resp = client.get_status()
         instance_data = resp.get("instance", {})
@@ -314,7 +330,7 @@ def session_status(request):
             session.phone_number = instance_data.get("profileNumber", "")
             session.save(update_fields=["status", "phone_number"])
             status = "connected"
-    except UazAPIError:
+    except EvolutionError:
         status = "error"
         qr_code = ""
 
@@ -336,9 +352,9 @@ def session_disconnect(request):
     session = tenant.wa_sessions.filter(is_active=True).first()
     if session:
         try:
-            client = UazAPIClient(session.instance_id, session.token)
+            client = EvolutionClient(session.instance_id, session.token)
             client.disconnect()
-        except UazAPIError:
+        except EvolutionError:
             pass
         session.status = SessionStatus.DISCONNECTED
         session.save(update_fields=["status"])
@@ -374,10 +390,10 @@ def session_pairing_code(request):
             "error": "Nenhuma sessão WhatsApp ativa. Clique em Conectar primeiro.",
         })
 
-    client = UazAPIClient(session.instance_id, session.token)
+    client = EvolutionClient(session.instance_id, session.token)
     try:
         code = client.get_pairing_code(phone)
-    except UazAPIError as exc:
+    except EvolutionError as exc:
         return render(request, "channels_wa/_session_pairing.html", {
             "step": "form",
             "error": str(exc),

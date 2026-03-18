@@ -1,12 +1,12 @@
 """
-Cliente de integração com Evolution API v2.x
+Evolution API client — integração com Evolution API v2.x
 Documentação: https://doc.evolution-api.com
 
 Autenticação:
 - Todos os endpoints: header 'apikey' (global ou por instância)
 - Endpoints admin:   header 'apikey' com a chave global EVOLUTION_API_KEY
 
-Diferenças em relação ao UazAPI v2.0 (anterior):
+Diferenças em relação ao protocolo anterior:
 - Instance name vai no PATH, não no corpo da requisição
 - Header de auth é 'apikey' (não 'token')
 - Eventos webhook diferem (MESSAGES_UPSERT, CONNECTION_UPDATE, QRCODE_UPDATED)
@@ -28,12 +28,8 @@ logger = logging.getLogger(__name__)
 QR_CACHE_TTL = 90
 
 
-class UazAPIError(Exception):
-    """Mantido com o nome anterior para compatibilidade de imports."""
-
-
-# Alias para código novo
-EvolutionError = UazAPIError
+class EvolutionError(Exception):
+    pass
 
 
 def _qr_cache_key(instance_id: str) -> str:
@@ -59,11 +55,9 @@ def _build_qr_base64(code: str) -> str:
         return ""
 
 
-class UazAPIClient:
+class EvolutionClient:
     """
     Cliente HTTP para a Evolution API v2.
-    Mantém a mesma interface pública do cliente anterior (UazAPI v2.0)
-    para minimizar alterações no resto do projeto.
     """
 
     def __init__(self, instance_id: str, token: str):
@@ -94,12 +88,12 @@ class UazAPIClient:
                 "Evolution API HTTP %s — %s — payload: %s",
                 exc.response.status_code, exc.response.text, payload,
             )
-            raise UazAPIError(
+            raise EvolutionError(
                 f"Evolution API error {exc.response.status_code}: {exc.response.text}"
             ) from exc
         except httpx.RequestError as exc:
             logger.error("Evolution API request error: %s", exc)
-            raise UazAPIError(f"Evolution API request failed: {exc}") from exc
+            raise EvolutionError(f"Evolution API request failed: {exc}") from exc
 
     def _get(self, path: str, params: dict | None = None) -> dict | list:
         url = self._url(path)
@@ -110,12 +104,12 @@ class UazAPIClient:
                 return resp.json()
         except httpx.HTTPStatusError as exc:
             logger.error("Evolution API HTTP %s — %s", exc.response.status_code, exc.response.text)
-            raise UazAPIError(
+            raise EvolutionError(
                 f"Evolution API error {exc.response.status_code}: {exc.response.text}"
             ) from exc
         except httpx.RequestError as exc:
             logger.error("Evolution API request error: %s", exc)
-            raise UazAPIError(f"Evolution API request failed: {exc}") from exc
+            raise EvolutionError(f"Evolution API request failed: {exc}") from exc
 
     def _delete(self, path: str) -> dict:
         url = self._url(path)
@@ -125,11 +119,11 @@ class UazAPIClient:
                 resp.raise_for_status()
                 return resp.json()
         except httpx.HTTPStatusError as exc:
-            raise UazAPIError(
+            raise EvolutionError(
                 f"Evolution API error {exc.response.status_code}: {exc.response.text}"
             ) from exc
         except httpx.RequestError as exc:
-            raise UazAPIError(f"Evolution API request failed: {exc}") from exc
+            raise EvolutionError(f"Evolution API request failed: {exc}") from exc
 
     def _put(self, path: str, payload: dict | None = None) -> dict:
         url = self._url(path)
@@ -139,11 +133,11 @@ class UazAPIClient:
                 resp.raise_for_status()
                 return resp.json()
         except httpx.HTTPStatusError as exc:
-            raise UazAPIError(
+            raise EvolutionError(
                 f"Evolution API error {exc.response.status_code}: {exc.response.text}"
             ) from exc
         except httpx.RequestError as exc:
-            raise UazAPIError(f"Evolution API request failed: {exc}") from exc
+            raise EvolutionError(f"Evolution API request failed: {exc}") from exc
 
     # ------------------------------------------------------------------
     # Instância
@@ -479,7 +473,7 @@ class UazAPIClient:
                 "avatar": resp.get("profilePictureUrl", resp.get("profilePicUrl", "")),
                 "wa_profilePicUrl": resp.get("profilePictureUrl", ""),
             }
-        except UazAPIError:
+        except EvolutionError:
             return {}
 
     def set_chat_labels(self, chatid: str, labels: list[str]) -> dict:
@@ -492,7 +486,7 @@ class UazAPIClient:
                 f"label/handleLabel/{self.instance_id}",
                 {"number": chatid, "labelId": labels[0] if labels else ""},
             )
-        except UazAPIError:
+        except EvolutionError:
             return {}
 
     def get_labels(self) -> list:
@@ -503,7 +497,7 @@ class UazAPIClient:
         try:
             resp = self._get(f"label/findLabels/{self.instance_id}")
             return resp if isinstance(resp, list) else []
-        except UazAPIError:
+        except EvolutionError:
             return []
 
     def send_menu(
@@ -543,10 +537,10 @@ class UazAPIClient:
     ) -> dict:
         """
         Evolution API não possui endpoint de bulk send.
-        Lança UazAPIError para que o caller use o fallback de loop individual.
+        Lança EvolutionError para que o caller use o fallback de loop individual.
         (tasks.py já possui esse fallback implementado)
         """
-        raise UazAPIError("Evolution API não suporta bulk send nativo. Use o loop individual.")
+        raise EvolutionError("Evolution API não suporta bulk send nativo. Use o loop individual.")
 
     # ------------------------------------------------------------------
     # Webhook
@@ -597,10 +591,6 @@ class UazAPIClient:
         return "".join(filter(str.isdigit, phone))
 
 
-# Alias para compatibilidade
-EvolutionClient = UazAPIClient
-
-
 def _normalize_message_type(msg_type: str) -> str:
     """
     Converte tipos de mensagem do Evolution para o formato legado esperado pelo sistema.
@@ -621,12 +611,45 @@ def _normalize_message_type(msg_type: str) -> str:
     return TYPE_MAP.get(msg_type, msg_type)
 
 
-def get_client_for_session(session) -> UazAPIClient:
+def get_client_for_session(session) -> EvolutionClient:
     """Retorna um cliente Evolution configurado para uma WhatsAppSession."""
-    return UazAPIClient(
+    return EvolutionClient(
         instance_id=session.instance_id,
         token=session.token,
     )
+
+
+def fetch_instance(instance_name: str) -> dict:
+    """
+    Busca uma instância existente na Evolution API pelo nome.
+    GET /instance/fetchInstances?instanceName={name}
+
+    Returns: {'name': str, 'token': str}  — mesmo formato de create_instance.
+    Raises EvolutionError se não encontrada.
+    """
+    base_url = settings.EVOLUTION_API_URL.rstrip("/")
+    url = f"{base_url}/instance/fetchInstances"
+    headers = {
+        "apikey": settings.EVOLUTION_API_KEY,
+        "Content-Type": "application/json",
+    }
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            resp = client.get(url, params={"instanceName": instance_name}, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                inst = item.get("instance", item)
+                name = inst.get("instanceName", "")
+                if name == instance_name:
+                    token = item.get("hash", {}).get("apikey", "")
+                    return {"name": name, "token": token}
+            raise EvolutionError(f"Instância '{instance_name}' não encontrada na Evolution API.")
+    except httpx.HTTPStatusError as exc:
+        raise EvolutionError(f"Erro ao buscar instância: {exc.response.text}") from exc
+    except httpx.RequestError as exc:
+        raise EvolutionError(f"Erro de conexão com Evolution API: {exc}") from exc
 
 
 def create_instance(instance_name: str) -> dict:
@@ -635,7 +658,6 @@ def create_instance(instance_name: str) -> dict:
     POST /instance/create — requer EVOLUTION_API_KEY (global admin key).
 
     Returns: {'name': str, 'token': str}
-    (compatível com a interface anterior do UazAPI)
     """
     base_url = settings.EVOLUTION_API_URL.rstrip("/")
     url = f"{base_url}/instance/create"
@@ -665,7 +687,7 @@ def create_instance(instance_name: str) -> dict:
             "Evolution API create_instance HTTP %s — %s",
             exc.response.status_code, exc.response.text,
         )
-        raise UazAPIError(f"Erro ao criar instância: {exc.response.text}") from exc
+        raise EvolutionError(f"Erro ao criar instância: {exc.response.text}") from exc
     except httpx.RequestError as exc:
         logger.error("Evolution API create_instance request error: %s", exc)
-        raise UazAPIError(f"Erro de conexão com Evolution API: {exc}") from exc
+        raise EvolutionError(f"Erro de conexão com Evolution API: {exc}") from exc

@@ -12,12 +12,12 @@ class SessionStatus(models.TextChoices):
 
 
 class WhatsAppSession(TimeStampedModel):
-    """Sessão WhatsApp via UazAPI por tenant."""
+    """Sessão WhatsApp via Evolution API por tenant."""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey("tenants.Tenant", on_delete=models.CASCADE, related_name="wa_sessions")
     name = models.CharField(_("nome da sessão"), max_length=100)
-    instance_id = models.CharField(_("instance ID UazAPI"), max_length=200, unique=True)
-    token = models.CharField(_("token UazAPI"), max_length=500)
+    instance_id = models.CharField(_("instance ID Evolution"), max_length=200, unique=True)
+    token = models.CharField(_("token Evolution"), max_length=500)
     status = models.CharField(_("status"), max_length=20, choices=SessionStatus.choices, default=SessionStatus.DISCONNECTED)
     phone_number = models.CharField(_("número WhatsApp"), max_length=30, blank=True)
     is_active = models.BooleanField(_("ativa"), default=True)

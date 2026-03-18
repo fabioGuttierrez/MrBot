@@ -49,7 +49,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
     def _handle_agent_message(self, text: str):
         from django.utils import timezone
         from apps.conversations.models import Conversation, Message, MessageDirection
-        from apps.channels_wa.uazapi import get_client_for_session
+        from apps.channels_wa.evolution import get_client_for_session
 
         try:
             conversation = Conversation.objects.select_related(
@@ -68,7 +68,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 client = get_client_for_session(conversation.session)
                 client.send_text(phone=conversation.contact.phone, message=text)
             except Exception as exc:
-                logger.error("WS: falha ao enviar via UazAPI: %s", exc)
+                logger.error("WS: falha ao enviar via Evolution API: %s", exc)
 
         except Exception as exc:
             logger.exception("WS: erro ao salvar mensagem do agente: %s", exc)

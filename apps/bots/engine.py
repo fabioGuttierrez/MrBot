@@ -59,7 +59,7 @@ def process_message(*, conversation, message) -> None:
 def _run_openai(conversation, message) -> None:
     """Chama o OpenAI e envia a resposta."""
     from apps.conversations.models import Message, MessageDirection, ConversationStatus
-    from apps.channels_wa.uazapi import get_client_for_session
+    from apps.channels_wa.evolution import get_client_for_session
     from .openai_service import chat_completion
 
     bot = conversation.bot
@@ -94,7 +94,7 @@ def _run_openai(conversation, message) -> None:
             track_id=str(out_message.id),
         )
     except Exception as exc:
-        logger.error("Falha ao enviar via UazAPI: %s", exc)
+        logger.error("Falha ao enviar via Evolution API: %s", exc)
 
     _notify_websocket(conversation, out_message)
 

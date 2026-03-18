@@ -302,7 +302,7 @@ def process_media_message(
     try:
         from apps.tenants.models import Tenant
         from apps.channels_wa.models import WhatsAppSession
-        from apps.channels_wa.uazapi import get_client_for_session
+        from apps.channels_wa.evolution import get_client_for_session
         from apps.contacts.models import Contact
         from apps.conversations.models import (
             Conversation, ConversationStatus, Message, MessageDirection,
@@ -403,13 +403,13 @@ def process_media_message(
 def sync_session_history(self, *, session_id: str, max_chats: int = 30, messages_per_chat: int = 50):
     """
     Importa histórico de conversas ao conectar uma sessão WhatsApp.
-    Busca os últimos N chats e suas mensagens via API do UazAPI.
+    Busca os últimos N chats e suas mensagens via Evolution API.
     Evita duplicatas via wa_message_id.
     """
     import datetime
     try:
         from apps.channels_wa.models import WhatsAppSession
-        from apps.channels_wa.uazapi import get_client_for_session
+        from apps.channels_wa.evolution import get_client_for_session
         from apps.tenants.models import Tenant
         from apps.contacts.models import Contact
         from apps.conversations.models import (
@@ -559,7 +559,7 @@ def enrich_contact_from_whatsapp(self, *, session_id: str, contact_id: str):
     """
     try:
         from apps.channels_wa.models import WhatsAppSession
-        from apps.channels_wa.uazapi import get_client_for_session
+        from apps.channels_wa.evolution import get_client_for_session
         from apps.contacts.models import Contact
 
         session = WhatsAppSession.objects.get(id=session_id)
@@ -608,12 +608,12 @@ def send_campaign_task(
     campaign_name: str = "MrBot Campaign",
 ):
     """
-    Envia mensagem em massa via UazAPI /sender/simple.
+    Envia mensagem em massa via Evolution API.
     Fallback: envia individualmente com delay se a API de campanha falhar.
     """
     try:
         from apps.channels_wa.models import WhatsAppSession
-        from apps.channels_wa.uazapi import get_client_for_session, UazAPIError
+        from apps.channels_wa.evolution import get_client_for_session, EvolutionError
 
         session = WhatsAppSession.objects.get(id=session_id)
         client = get_client_for_session(session)
@@ -627,7 +627,7 @@ def send_campaign_task(
             # Tenta usar o endpoint nativo de campanha
             client.send_campaign(numbers=phones, message=message, name=campaign_name)
             logger.info("Campanha '%s' enviada via /sender/simple.", campaign_name)
-        except UazAPIError:
+        except EvolutionError:
             # Fallback: envia um por um com delay
             import time
             logger.warning("Fallback: enviando campanha individualmente para %d números.", len(phones))
@@ -654,7 +654,7 @@ def send_broadcast_task(self, campaign_id: str):
     import time
     from apps.contacts.models import Campaign, CampaignStatus, Contact
     from apps.channels_wa.models import WhatsAppSession
-    from apps.channels_wa.uazapi import get_client_for_session, UazAPIError
+    from apps.channels_wa.evolution import get_client_for_session, EvolutionError
 
     try:
         campaign = Campaign.objects.select_related("tenant", "session").get(id=campaign_id)
@@ -697,7 +697,7 @@ def send_broadcast_task(self, campaign_id: str):
         try:
             client.send_campaign(numbers=phones, message=campaign.message, name=campaign.name)
             campaign.sent_count = total
-        except UazAPIError:
+        except EvolutionError:
             logger.warning("Campanha %s: fallback para envio individual.", campaign_id)
             sent = 0
             for phone in phones:
@@ -729,7 +729,7 @@ def send_followup_task(self, followup_id: str):
     Idempotente: verifica status == PENDING antes de enviar.
     """
     from apps.contacts.models import FollowUp, FollowUpStatus
-    from apps.channels_wa.uazapi import get_client_for_session, UazAPIError
+    from apps.channels_wa.evolution import get_client_for_session, EvolutionError
 
     try:
         fu = FollowUp.objects.select_related("contact", "session").get(id=followup_id)
@@ -754,8 +754,8 @@ def send_followup_task(self, followup_id: str):
         fu.save(update_fields=["status"])
         logger.info("Follow-up %s enviado para %s.", followup_id, fu.contact.phone)
 
-    except UazAPIError as exc:
-        logger.warning("Follow-up %s: UazAPIError — %s. Tentativa %d/%d.", followup_id, exc, self.request.retries + 1, self.max_retries)
+    except EvolutionError as exc:
+        logger.warning("Follow-up %s: EvolutionError — %s. Tentativa %d/%d.", followup_id, exc, self.request.retries + 1, self.max_retries)
         raise self.retry(exc=exc, countdown=60)
 
     except Exception as exc:
@@ -777,7 +777,7 @@ def check_and_reconnect_sessions(self):
     - Se restart() falhar → atualiza status para DISCONNECTED (admin deve reconectar)
     """
     from apps.channels_wa.models import WhatsAppSession, SessionStatus
-    from apps.channels_wa.uazapi import get_client_for_session, UazAPIError
+    from apps.channels_wa.evolution import get_client_for_session, EvolutionError
 
     sessions = WhatsAppSession.objects.filter(is_active=True)
     for session in sessions:
@@ -795,7 +795,7 @@ def check_and_reconnect_sessions(self):
                     client.restart()
                     session.status = SessionStatus.CONNECTING
                     session.save(update_fields=["status"])
-                except UazAPIError as restart_exc:
+                except EvolutionError as restart_exc:
                     logger.error("Restart falhou para sessão %s: %s", session.id, restart_exc)
                     session.status = SessionStatus.DISCONNECTED
                     session.save(update_fields=["status"])
@@ -804,7 +804,7 @@ def check_and_reconnect_sessions(self):
                 session.status = SessionStatus.CONNECTED
                 session.save(update_fields=["status"])
 
-        except UazAPIError as exc:
+        except EvolutionError as exc:
             logger.warning("Health-check: erro ao verificar sessão %s: %s", session.id, exc)
         except Exception:
             logger.exception("Health-check: erro inesperado para sessão %s.", session.id)

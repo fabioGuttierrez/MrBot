@@ -196,7 +196,7 @@ def run_flow(*, conversation, message_text: str) -> str:
       "no_flow"        → bot não tem flow configurado (cai no OpenAI)
     """
     from apps.conversations.models import ConversationStatus
-    from apps.channels_wa.uazapi import get_client_for_session
+    from apps.channels_wa.evolution import get_client_for_session
 
     bot = conversation.bot
     if not bot:
@@ -339,7 +339,7 @@ def _save_and_send_messages(conversation, messages: list, client):
                     footer=footer,
                 )
             except Exception as exc:
-                logger.error("Flow: falha ao enviar menu via UazAPI: %s", exc)
+                logger.error("Flow: falha ao enviar menu via Evolution API: %s", exc)
         else:
             # Mensagem de texto simples
             text = str(msg_data)
@@ -356,7 +356,7 @@ def _save_and_send_messages(conversation, messages: list, client):
                     track_id=str(msg.id),
                 )
             except Exception as exc:
-                logger.error("Flow: falha ao enviar msg via UazAPI: %s", exc)
+                logger.error("Flow: falha ao enviar msg via Evolution API: %s", exc)
 
         _notify_websocket(conversation, msg)
 

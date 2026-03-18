@@ -9,7 +9,7 @@ from django.conf import settings
 from .models import Tenant
 from apps.accounts.models import TenantMembership, Role
 from apps.channels_wa.models import WhatsAppSession, SessionStatus
-from apps.channels_wa.uazapi import UazAPIClient, UazAPIError, create_instance
+from apps.channels_wa.evolution import EvolutionClient, EvolutionError, create_instance, fetch_instance
 
 
 @login_required
@@ -58,7 +58,7 @@ def onboarding_create_tenant(request):
 @login_required
 def onboarding_wa_connect(request):
     """
-    Step 2: Cria instância WhatsApp na UazAPI + conecta + retorna QR code (HTMX partial).
+    Step 2: Cria instância WhatsApp na Evolution API + conecta + retorna QR code (HTMX partial).
     GET/POST — acionado pelo botão 'Conectar WhatsApp' no wizard.
     """
     tenant = request.tenant
@@ -75,6 +75,21 @@ def onboarding_wa_connect(request):
         instance_name = f"{tenant.slug}-wa"
         try:
             data = create_instance(instance_name)
+        except EvolutionError as exc:
+            if "already in use" in str(exc).lower():
+                try:
+                    data = fetch_instance(instance_name)
+                except EvolutionError as fetch_exc:
+                    return render(request, "onboarding/_qr.html", {
+                        "status": "error",
+                        "error": str(fetch_exc),
+                    })
+            else:
+                return render(request, "onboarding/_qr.html", {
+                    "status": "error",
+                    "error": str(exc),
+                })
+        try:
             session = WhatsAppSession.objects.create(
                 tenant=tenant,
                 name=f"WhatsApp — {tenant.name}",
@@ -86,23 +101,23 @@ def onboarding_wa_connect(request):
                 f"{settings.APP_BASE_URL.rstrip('/')}"
                 f"/webhook/{tenant.slug}/{session.instance_id}/"
             )
-            client = UazAPIClient(session.instance_id, session.token)
+            client = EvolutionClient(session.instance_id, session.token)
             client.set_webhook(webhook_url)
 
-        except UazAPIError as exc:
+        except EvolutionError as exc:
             return render(request, "onboarding/_qr.html", {
                 "status": "error",
                 "error": str(exc),
             })
 
     # Inicia conexão para gerar QR code
-    client = UazAPIClient(session.instance_id, session.token)
+    client = EvolutionClient(session.instance_id, session.token)
     try:
         resp = client.connect()
         instance_data = resp.get("instance", {})
         status = instance_data.get("status", "connecting")
         qr_code = instance_data.get("qrcode", "")
-    except UazAPIError as exc:
+    except EvolutionError as exc:
         return render(request, "onboarding/_qr.html", {
             "status": "error",
             "error": str(exc),
@@ -129,7 +144,7 @@ def onboarding_wa_status(request):
     if not session:
         return render(request, "onboarding/_qr.html", {"status": "no_session"})
 
-    client = UazAPIClient(session.instance_id, session.token)
+    client = EvolutionClient(session.instance_id, session.token)
     try:
         resp = client.get_status()
         instance_data = resp.get("instance", {})
@@ -142,7 +157,7 @@ def onboarding_wa_status(request):
             session.save(update_fields=["status", "phone_number"])
             status = "connected"
 
-    except UazAPIError:
+    except EvolutionError:
         status = "error"
         qr_code = ""
 
@@ -185,10 +200,10 @@ def onboarding_wa_pairing_code(request):
             "error": "Clique em 'Conectar com QR code' para iniciar a instância antes de usar o código.",
         })
 
-    client = UazAPIClient(session.instance_id, session.token)
+    client = EvolutionClient(session.instance_id, session.token)
     try:
         code = client.get_pairing_code(phone)
-    except UazAPIError as exc:
+    except EvolutionError as exc:
         return render(request, "onboarding/_pairing.html", {
             "step": "form",
             "error": str(exc),

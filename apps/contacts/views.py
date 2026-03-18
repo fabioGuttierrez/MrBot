@@ -65,7 +65,7 @@ def enrich_contact(request, contact_id):
         return redirect("contacts:detail", contact_id=contact_id)
 
     try:
-        from apps.channels_wa.uazapi import get_client_for_session
+        from apps.channels_wa.evolution import get_client_for_session
         client = get_client_for_session(session)
         chatid = f"{contact.phone}@s.whatsapp.net"
         data = client.get_chat_details(chatid)
@@ -108,7 +108,7 @@ def verify_number(request, contact_id):
         return JsonResponse({"ok": False, "error": "Nenhuma sessão WhatsApp conectada."})
 
     try:
-        from apps.channels_wa.uazapi import get_client_for_session
+        from apps.channels_wa.evolution import get_client_for_session
         client = get_client_for_session(session)
         result = client.check_phone(contact.phone)
         has_wa = result.get("exists") or result.get("hasWhatsapp") or result.get("onWhatsApp", False)
@@ -131,7 +131,7 @@ def sync_labels(request, contact_id):
         return redirect("contacts:detail", contact_id=contact_id)
 
     try:
-        from apps.channels_wa.uazapi import get_client_for_session
+        from apps.channels_wa.evolution import get_client_for_session
         client = get_client_for_session(session)
         chatid = f"{contact.phone}@s.whatsapp.net"
         client.set_chat_labels(chatid, contact.tags or [])

@@ -142,9 +142,9 @@ def send_message(request, conversation_id):
     conversation.last_message_at = timezone.now()
     conversation.save(update_fields=["last_message_at"])
 
-    # Envia via UazAPI
+    # Envia via Evolution API
     try:
-        from apps.channels_wa.uazapi import get_client_for_session
+        from apps.channels_wa.evolution import get_client_for_session
         client = get_client_for_session(conversation.session)
         client.send_text(
             phone=conversation.contact.phone,
@@ -152,7 +152,7 @@ def send_message(request, conversation_id):
             track_id=str(msg.id),
         )
     except Exception as exc:
-        logger.error("Falha ao enviar msg humana via UazAPI: %s", exc)
+        logger.error("Falha ao enviar msg humana via Evolution API: %s", exc)
 
     # Notifica WebSocket
     _push_ws(conversation, msg)
@@ -209,7 +209,7 @@ def _mark_read_on_whatsapp(session, phone: str) -> None:
     """Marca mensagens como lidas no WhatsApp em background (não bloqueia a view)."""
     def _run():
         try:
-            from apps.channels_wa.uazapi import get_client_for_session
+            from apps.channels_wa.evolution import get_client_for_session
             client = get_client_for_session(session)
             chatid = f"{phone}@s.whatsapp.net"
             client.mark_messages_read(chatid)

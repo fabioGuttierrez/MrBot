@@ -76,7 +76,8 @@ def onboarding_wa_connect(request):
         try:
             data = create_instance(instance_name)
         except EvolutionError as exc:
-            if "already in use" in str(exc).lower():
+            exc_str = str(exc).lower()
+            if "already in use" in exc_str or "timeout" in exc_str:
                 try:
                     data = fetch_instance(instance_name)
                 except EvolutionError as fetch_exc:

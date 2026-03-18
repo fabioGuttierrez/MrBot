@@ -95,10 +95,10 @@ class EvolutionClient:
             logger.error("Evolution API request error: %s", exc)
             raise EvolutionError(f"Evolution API request failed: {exc}") from exc
 
-    def _get(self, path: str, params: dict | None = None) -> dict | list:
+    def _get(self, path: str, params: dict | None = None, timeout: float = 20.0) -> dict | list:
         url = self._url(path)
         try:
-            with httpx.Client(timeout=20.0) as client:
+            with httpx.Client(timeout=timeout) as client:
                 resp = client.get(url, params=params, headers=self._headers)
                 resp.raise_for_status()
                 return resp.json()
@@ -186,6 +186,7 @@ class EvolutionClient:
         resp = self._get(
             f"instance/connect/{self.instance_id}",
             params={"pairingCode": "false"},
+            timeout=60.0,
         )
 
         # Tenta obter base64 da resposta (quando Evolution já envia)
@@ -644,7 +645,11 @@ def fetch_instance(instance_name: str) -> dict:
                 inst = item.get("instance", item)
                 name = inst.get("instanceName", "")
                 if name == instance_name:
-                    token = item.get("hash", {}).get("apikey", "")
+                    # Usa apikey da instância; fallback para chave global se não exposta
+                    token = (
+                        item.get("hash", {}).get("apikey", "")
+                        or settings.EVOLUTION_API_KEY
+                    )
                     return {"name": name, "token": token}
             raise EvolutionError(f"Instância '{instance_name}' não encontrada na Evolution API.")
     except httpx.HTTPStatusError as exc:
@@ -672,7 +677,7 @@ def create_instance(instance_name: str) -> dict:
         "integration": "WHATSAPP-BAILEYS",
     }
     try:
-        with httpx.Client(timeout=20.0) as client:
+        with httpx.Client(timeout=60.0) as client:
             resp = client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
             data = resp.json()
@@ -689,6 +694,9 @@ def create_instance(instance_name: str) -> dict:
             exc.response.status_code, exc.response.text,
         )
         raise EvolutionError(f"Erro ao criar instância: {exc.response.text}") from exc
+    except httpx.TimeoutException as exc:
+        logger.warning("create_instance timeout — instância pode ter sido criada: %s", exc)
+        raise EvolutionError(f"Timeout ao criar instância: {exc}") from exc
     except httpx.RequestError as exc:
         logger.error("Evolution API create_instance request error: %s", exc)
         raise EvolutionError(f"Erro de conexão com Evolution API: {exc}") from exc

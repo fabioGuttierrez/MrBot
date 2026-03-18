@@ -255,8 +255,9 @@ def session_reconnect(request):
         try:
             data = create_instance(instance_name)
         except EvolutionError as exc:
-            # Instância já existe na Evolution API — recupera em vez de recriar
-            if "already in use" in str(exc).lower():
+            # Instância já existe ou criação deu timeout (pode ter sido criada mesmo assim)
+            exc_str = str(exc).lower()
+            if "already in use" in exc_str or "timeout" in exc_str:
                 try:
                     data = fetch_instance(instance_name)
                 except EvolutionError as fetch_exc:

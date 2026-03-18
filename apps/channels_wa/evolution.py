@@ -555,7 +555,7 @@ class EvolutionClient:
         Inclui cabeçalho X-Webhook-Secret se configurado
         (Evolution v2.2+ suporta headers personalizados).
         """
-        payload: dict = {
+        webhook_config: dict = {
             "enabled": enabled,
             "url": webhook_url,
             "webhookByEvents": False,
@@ -572,10 +572,12 @@ class EvolutionClient:
             from django.conf import settings as dj_settings
             secret = dj_settings.WEBHOOK_SECRET
             if secret and secret != "changeme":
-                payload["headers"] = {"X-Webhook-Secret": secret}
+                webhook_config["headers"] = {"X-Webhook-Secret": secret}
         except Exception:
             pass
 
+        # Evolution API v2.3+ exige payload aninhado sob chave "webhook"
+        payload = {"webhook": webhook_config}
         return self._post(f"webhook/set/{self.instance_id}", payload)
 
     def get_webhook(self) -> dict:

@@ -270,12 +270,10 @@ class EvolutionClient:
         """
         payload: dict = {
             "number": self._normalize_phone(phone),
-            "options": {
-                "delay": delay,
-                "presence": "composing" if delay else "available",
-            },
-            "textMessage": {"text": message},
+            "text": message,
         }
+        if delay:
+            payload["delay"] = delay
         return self._post(f"message/sendText/{self.instance_id}", payload)
 
     def send_text_with_delay(

@@ -11,7 +11,7 @@ class TenantMiddleware:
     EXEMPT_PATHS = [
         "/admin/",
         "/accounts/",
-        "/webhook/",
+        "/widget/",
         "/static/",
         "/media/",
     ]
@@ -31,6 +31,7 @@ class TenantMiddleware:
                 request.user.memberships
                 .select_related("tenant")
                 .filter(tenant__is_active=True)
+                .order_by("created")
                 .first()
             )
             if membership:

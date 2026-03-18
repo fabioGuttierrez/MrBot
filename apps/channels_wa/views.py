@@ -1,40 +1,43 @@
 """
-Webhook receiver para eventos da uazapiGO v2.0.
+Views do app channels_wa.
 
-Payload recebido (event=messages):
-{
-  "event": "messages",
-  "instance": "instance_id",
-  "data": {
-    "id": "r1a2b3c",
-    "messageid": "3EB0538DA65A59F6D8A251",
-    "chatid": "5511999999999@s.whatsapp.net",
-    "sender": "5511999999999@s.whatsapp.net",
-    "senderName": "Nome Contato",
-    "isGroup": false,
-    "fromMe": false,
-    "messageType": "conversation",
-    "text": "Olá!",
-    "wasSentByApi": false,
-    "messageTimestamp": 1700000000
-  }
-}
+- webhook_receiver: recebe eventos da uazapiGO v2.0
+- sessions_list / session_reconnect / session_status / session_disconnect:
+  gerenciamento de sessões WhatsApp pelo painel
 """
 import json
 import logging
-from django.http import JsonResponse, HttpResponseForbidden
+from django.contrib.auth.decorators import login_required
+from django.http import JsonResponse, HttpResponseForbidden, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, render, redirect
 from django.conf import settings
 
 from apps.tenants.models import Tenant
-from .models import WhatsAppSession
+from .models import WhatsAppSession, SessionStatus
+from .uazapi import UazAPIClient, UazAPIError, create_instance
 
 logger = logging.getLogger(__name__)
 
 # Eventos que processamos
 HANDLED_EVENTS = {"messages", "connection"}
+
+
+def _fix_encoding(text: str) -> str:
+    """
+    Corrige double-encoding Latin-1/UTF-8 que o UazAPI às vezes envia.
+
+    O Baileys (lib interna) às vezes interpreta os bytes UTF-8 do WhatsApp
+    como Latin-1 antes de embutir no JSON, resultando em strings como
+    "OlÃ¡" em vez de "Olá".  Revertemos codificando de volta para Latin-1
+    (recuperando os bytes UTF-8 originais) e então decodificando como UTF-8.
+    Se o texto já estiver correto, o try/except retorna o original.
+    """
+    try:
+        return text.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return text
 
 # Tipos de mensagem que contêm mídia (sem texto)
 MEDIA_TYPES = {"image", "video", "audio", "ptt", "document", "sticker"}
@@ -149,9 +152,9 @@ def _handle_message_event(tenant, session, payload: dict):
         return
 
     msg_type: str = data.get("messageType", "")
-    push_name: str = data.get("senderName", "")
+    push_name: str = _fix_encoding(data.get("senderName", ""))
     wa_message_id: str = data.get("messageid", "")
-    text: str = data.get("text", "").strip()
+    text: str = _fix_encoding(data.get("text", "").strip())
 
     # ── Roteamento por tipo ──────────────────────────────────────────
     if text:
@@ -190,3 +193,126 @@ def _handle_message_event(tenant, session, payload: dict):
             "Mensagem sem texto nem mídia reconhecida (tipo=%s) de %s — ignorando.",
             msg_type, phone,
         )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Gerenciamento de sessões WhatsApp pelo painel
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@login_required
+def sessions_list(request):
+    """Página de gerenciamento da sessão WhatsApp do tenant."""
+    tenant = request.tenant
+    if not tenant:
+        return redirect("tenants:onboarding")
+    session = tenant.wa_sessions.filter(is_active=True).first()
+    return render(request, "channels_wa/sessions.html", {"session": session})
+
+
+@login_required
+def session_reconnect(request):
+    """
+    HTMX: cria ou reconecta a sessão WhatsApp e retorna o partial com QR code.
+    GET — acionado pelo botão 'Conectar' ou 'Reconectar' na página de sessões.
+    """
+    tenant = request.tenant
+    if not tenant:
+        return HttpResponseForbidden("Sem tenant.")
+
+    session = tenant.wa_sessions.filter(is_active=True).first()
+
+    if not session:
+        instance_name = f"{tenant.slug}-wa"
+        try:
+            data = create_instance(instance_name)
+            session = WhatsAppSession.objects.create(
+                tenant=tenant,
+                name=f"WhatsApp — {tenant.name}",
+                instance_id=data["name"],
+                token=data["token"],
+            )
+            webhook_url = (
+                f"{settings.APP_BASE_URL.rstrip('/')}"
+                f"/webhook/{tenant.slug}/{session.instance_id}/"
+            )
+            client = UazAPIClient(session.instance_id, session.token)
+            client.set_webhook(webhook_url)
+        except UazAPIError as exc:
+            return render(request, "channels_wa/_session_qr.html", {
+                "status": "error",
+                "error": str(exc),
+            })
+
+    client = UazAPIClient(session.instance_id, session.token)
+    try:
+        resp = client.connect()
+        instance_data = resp.get("instance", {})
+        status = instance_data.get("status", "connecting")
+        qr_code = instance_data.get("qrcode", "")
+    except UazAPIError as exc:
+        return render(request, "channels_wa/_session_qr.html", {
+            "status": "error",
+            "error": str(exc),
+        })
+
+    return render(request, "channels_wa/_session_qr.html", {
+        "status": status,
+        "qr_code": qr_code,
+        "session": session,
+    })
+
+
+@login_required
+def session_status(request):
+    """HTMX: polling de status da sessão (every 3s)."""
+    tenant = request.tenant
+    if not tenant:
+        return HttpResponse("", status=204)
+
+    session = tenant.wa_sessions.filter(is_active=True).first()
+    if not session:
+        return render(request, "channels_wa/_session_qr.html", {"status": "no_session"})
+
+    client = UazAPIClient(session.instance_id, session.token)
+    try:
+        resp = client.get_status()
+        instance_data = resp.get("instance", {})
+        status = instance_data.get("status", "disconnected")
+        qr_code = instance_data.get("qrcode", "")
+
+        if status in ("connected", "open"):
+            session.status = SessionStatus.CONNECTED
+            session.phone_number = instance_data.get("profileNumber", "")
+            session.save(update_fields=["status", "phone_number"])
+            status = "connected"
+    except UazAPIError:
+        status = "error"
+        qr_code = ""
+
+    return render(request, "channels_wa/_session_qr.html", {
+        "status": status,
+        "qr_code": qr_code,
+        "session": session,
+    })
+
+
+@login_required
+@require_POST
+def session_disconnect(request):
+    """POST: desconecta a sessão WhatsApp atual."""
+    tenant = request.tenant
+    if not tenant:
+        return redirect("tenants:onboarding")
+
+    session = tenant.wa_sessions.filter(is_active=True).first()
+    if session:
+        try:
+            client = UazAPIClient(session.instance_id, session.token)
+            client.disconnect()
+        except UazAPIError:
+            pass
+        session.status = SessionStatus.DISCONNECTED
+        session.save(update_fields=["status"])
+
+    return redirect("channels_wa:sessions")

@@ -1,0 +1,97 @@
+{% extends "base_app.html" %}
+{% block title %}Follow-ups — MrBot{% endblock %}
+
+{% block app_content %}
+<div class="flex-1 overflow-y-auto bg-gray-50">
+
+  <!-- Header -->
+  <div class="bg-white border-b px-6 py-4 flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-gray-800">Follow-ups</h1>
+      <p class="text-sm text-gray-500 mt-0.5">Mensagens agendadas para envio futuro</p>
+    </div>
+    <button hx-get="{% url 'contacts:followup_create' %}"
+            hx-target="#followup-modal-content"
+            hx-swap="innerHTML"
+            @click="$dispatch('open-modal')"
+            class="flex items-center gap-2 px-4 py-2 bg-wa-green hover:bg-wa-dark text-white text-sm font-semibold rounded-lg transition">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+      </svg>
+      Agendar follow-up
+    </button>
+  </div>
+
+  {% if messages %}
+    <div class="px-6 pt-4 space-y-2">
+      {% for msg in messages %}
+        <div class="px-4 py-2 rounded-lg text-sm
+          {% if msg.tags == 'success' %}bg-green-50 text-green-700 border border-green-200
+          {% elif msg.tags == 'error' %}bg-red-50 text-red-700 border border-red-200
+          {% else %}bg-yellow-50 text-yellow-700 border border-yellow-200{% endif %}">
+          {{ msg }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <!-- Filtro por status -->
+  <div class="bg-white border-b px-6 py-2 flex gap-1">
+    {% for val, label in FollowUpStatus.choices %}
+    <a href="?status={{ val }}"
+       class="px-3 py-1.5 rounded-lg text-sm transition
+              {% if status_filter == val %}bg-wa-green text-white font-medium{% else %}text-gray-500 hover:bg-gray-100{% endif %}">
+      {{ label }}
+    </a>
+    {% endfor %}
+    <a href="?status=all"
+       class="px-3 py-1.5 rounded-lg text-sm transition
+              {% if status_filter == 'all' %}bg-wa-green text-white font-medium{% else %}text-gray-500 hover:bg-gray-100{% endif %}">
+      Todos
+    </a>
+  </div>
+
+  <!-- Lista -->
+  <div class="max-w-4xl mx-auto px-6 py-6">
+    {% if followups %}
+    <div class="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100" id="followup-list">
+      {% for fu in followups %}
+        {% include "contacts/_followup_row.html" %}
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="bg-white rounded-xl border border-gray-200 p-16 text-center">
+      <div class="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
+        <svg class="w-7 h-7 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+      </div>
+      <p class="text-gray-500 text-sm">Nenhum follow-up encontrado.</p>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+<!-- Modal follow-up -->
+<div x-data="{ open: false }"
+     @open-modal.window="open = true"
+     x-show="open"
+     x-cloak
+     class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+     @keydown.escape.window="open = false">
+  <div class="bg-white rounded-2xl border border-gray-200 shadow-xl w-full max-w-lg mx-4"
+       @click.outside="open = false">
+    <div class="flex items-center justify-between px-6 py-4 border-b">
+      <h3 class="font-semibold text-gray-800">Agendar Follow-up</h3>
+      <button @click="open = false" class="text-gray-400 hover:text-gray-600">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div id="followup-modal-content" class="p-6"></div>
+  </div>
+</div>
+{% endblock %}

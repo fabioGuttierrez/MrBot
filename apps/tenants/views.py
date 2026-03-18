@@ -17,15 +17,14 @@ def onboarding(request):
     """Wizard de onboarding — ponto de entrada."""
     tenant = request.tenant
 
+    # Se já tem empresa e não está forçando um step → vai direto para o inbox
+    if tenant and "step" not in request.GET:
+        return redirect("inbox:index")
+
     if not tenant:
         default_step = 1
     else:
-        has_connected_wa = tenant.wa_sessions.filter(
-            is_active=True, status=SessionStatus.CONNECTED
-        ).exists()
-        if has_connected_wa and "step" not in request.GET:
-            return redirect("inbox:index")
-        default_step = 2
+        default_step = int(request.GET.get("step", 2))
 
     initial_step = int(request.GET.get("step", default_step))
     return render(request, "onboarding/wizard.html", {"initial_step": initial_step})

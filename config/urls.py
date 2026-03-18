@@ -22,6 +22,9 @@ urlpatterns = [
     # Webhook UazAPI
     path("webhook/", include("apps.channels_wa.urls", namespace="channels_wa")),
 
+    # Widget público (sem autenticação)
+    path("widget/", include("apps.widget.urls", namespace="widget")),
+
     # Raiz → redireciona para inbox (sem conflito de namespace)
     path("", RedirectView.as_view(url="/inbox/", permanent=False)),
 ]

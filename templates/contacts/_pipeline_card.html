@@ -1,0 +1,67 @@
+<!-- partial: _pipeline_card.html -->
+<div id="card-{{ contact.id }}"
+     data-contact-id="{{ contact.id }}"
+     class="bg-white rounded-lg border border-gray-200 shadow-sm cursor-grab active:cursor-grabbing select-none hover:shadow-md hover:border-gray-300 transition-all group">
+
+  <div class="p-3">
+    <!-- Topo: avatar + nome + activity -->
+    <div class="flex items-start gap-2.5">
+
+      <!-- Avatar -->
+      {% if contact.avatar_url %}
+        <img src="{{ contact.avatar_url }}"
+             class="w-8 h-8 rounded-full object-cover flex-shrink-0 mt-0.5" alt="">
+      {% else %}
+        <div class="w-8 h-8 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center text-white text-xs font-bold
+                    bg-gradient-to-br
+                    {% if contact.stage == 'lead' %}from-gray-400 to-gray-500
+                    {% elif contact.stage == 'prospect' %}from-blue-400 to-blue-600
+                    {% elif contact.stage == 'client' %}from-wa-green to-wa-dark
+                    {% else %}from-gray-300 to-gray-400{% endif %}">
+          {{ contact.display_name|first|upper }}
+        </div>
+      {% endif %}
+
+      <!-- Nome + telefone -->
+      <div class="min-w-0 flex-1">
+        <a href="{% url 'contacts:detail' contact.id %}"
+           onclick="event.stopPropagation()"
+           class="block text-sm font-semibold text-gray-800 hover:text-wa-green leading-tight truncate">
+          {{ contact.display_name }}
+        </a>
+        <p class="text-[11px] text-gray-400 mt-0.5">{{ contact.phone }}</p>
+      </div>
+
+      <!-- Activity indicator (preenchido pelo JS) -->
+      <div data-activity="{{ contact.last_activity|date:'U'|default:'' }}"
+           class="flex-shrink-0 mt-0.5"></div>
+
+    </div>
+
+    <!-- Tags -->
+    {% if contact.tags %}
+    <div class="flex flex-wrap gap-1 mt-2.5">
+      {% for tag in contact.tags %}
+        <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide
+                     bg-indigo-50 text-indigo-600 border border-indigo-100">
+          {{ tag }}
+        </span>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+  </div>
+
+  <!-- Rodapé: link para conversa -->
+  <div class="border-t border-gray-100 px-3 py-1.5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
+    <span class="text-[10px] text-gray-400">
+      {% if contact.email %}{{ contact.email|truncatechars:24 }}{% endif %}
+    </span>
+    <a href="{% url 'contacts:detail' contact.id %}"
+       onclick="event.stopPropagation()"
+       class="text-[10px] text-wa-green hover:underline font-medium">
+      Ver perfil →
+    </a>
+  </div>
+
+</div>

@@ -641,3 +641,123 @@ def send_campaign_task(
     except Exception as exc:
         logger.exception("Erro na campanha '%s' | session=%s", campaign_name, session_id)
         raise self.retry(exc=exc, countdown=60)
+
+
+# ─── Broadcast (Campaign model) ───────────────────────────────────────────────
+
+@shared_task(bind=True, max_retries=2, name="channels_wa.send_broadcast_task")
+def send_broadcast_task(self, campaign_id: str):
+    """
+    Executa um broadcast (Campaign) para os contatos filtrados por tags.
+    Atualiza campaign.status → RUNNING → DONE / FAILED.
+    """
+    import time
+    from apps.contacts.models import Campaign, CampaignStatus, Contact
+    from apps.channels_wa.models import WhatsAppSession
+    from apps.channels_wa.uazapi import get_client_for_session, UazAPIError
+
+    try:
+        campaign = Campaign.objects.select_related("tenant", "session").get(id=campaign_id)
+    except Campaign.DoesNotExist:
+        logger.error("send_broadcast_task: Campaign %s não encontrada.", campaign_id)
+        return
+
+    if campaign.status not in (CampaignStatus.DRAFT, CampaignStatus.SCHEDULED):
+        logger.info("Campanha %s já está em estado '%s', ignorando.", campaign_id, campaign.status)
+        return
+
+    campaign.status = CampaignStatus.RUNNING
+    campaign.save(update_fields=["status"])
+
+    try:
+        # Filtra contatos do tenant com TODAS as tags do filtro (lógica AND)
+        qs = Contact.objects.filter(tenant=campaign.tenant)
+        for tag in (campaign.tags_filter or []):
+            qs = qs.filter(tags__contains=tag)
+
+        phones = list(qs.values_list("phone", flat=True))
+        total = len(phones)
+        campaign.total_count = total
+        campaign.save(update_fields=["total_count"])
+
+        if not phones:
+            logger.warning("Campanha %s: nenhum contato encontrado com as tags %s.", campaign_id, campaign.tags_filter)
+            campaign.status = CampaignStatus.DONE
+            campaign.save(update_fields=["status"])
+            return
+
+        if not campaign.session:
+            logger.error("Campanha %s: sem sessão WhatsApp configurada.", campaign_id)
+            campaign.status = CampaignStatus.FAILED
+            campaign.save(update_fields=["status"])
+            return
+
+        client = get_client_for_session(campaign.session)
+
+        try:
+            client.send_campaign(numbers=phones, message=campaign.message, name=campaign.name)
+            campaign.sent_count = total
+        except UazAPIError:
+            logger.warning("Campanha %s: fallback para envio individual.", campaign_id)
+            sent = 0
+            for phone in phones:
+                try:
+                    client.send_text(phone=phone, message=campaign.message, delay=2000)
+                    sent += 1
+                    time.sleep(3)
+                except Exception as exc:
+                    logger.error("Campanha %s: falha ao enviar para %s: %s", campaign_id, phone, exc)
+            campaign.sent_count = sent
+
+        campaign.status = CampaignStatus.DONE
+        campaign.save(update_fields=["status", "sent_count"])
+        logger.info("Campanha %s concluída: %d/%d enviados.", campaign_id, campaign.sent_count, total)
+
+    except Exception as exc:
+        logger.exception("Erro fatal na campanha %s.", campaign_id)
+        campaign.status = CampaignStatus.FAILED
+        campaign.save(update_fields=["status"])
+        raise self.retry(exc=exc, countdown=120)
+
+
+# ─── Follow-up agendado ───────────────────────────────────────────────────────
+
+@shared_task(bind=True, max_retries=3, name="channels_wa.send_followup_task")
+def send_followup_task(self, followup_id: str):
+    """
+    Envia um follow-up agendado ao contato.
+    Idempotente: verifica status == PENDING antes de enviar.
+    """
+    from apps.contacts.models import FollowUp, FollowUpStatus
+    from apps.channels_wa.uazapi import get_client_for_session, UazAPIError
+
+    try:
+        fu = FollowUp.objects.select_related("contact", "session").get(id=followup_id)
+    except FollowUp.DoesNotExist:
+        logger.error("send_followup_task: FollowUp %s não encontrado.", followup_id)
+        return
+
+    if fu.status != FollowUpStatus.PENDING:
+        logger.info("Follow-up %s já está em estado '%s', ignorando.", followup_id, fu.status)
+        return
+
+    if not fu.session:
+        logger.error("Follow-up %s: sem sessão WhatsApp configurada.", followup_id)
+        fu.status = FollowUpStatus.CANCELLED
+        fu.save(update_fields=["status"])
+        return
+
+    try:
+        client = get_client_for_session(fu.session)
+        client.send_text(phone=fu.contact.phone, message=fu.message)
+        fu.status = FollowUpStatus.SENT
+        fu.save(update_fields=["status"])
+        logger.info("Follow-up %s enviado para %s.", followup_id, fu.contact.phone)
+
+    except UazAPIError as exc:
+        logger.warning("Follow-up %s: UazAPIError — %s. Tentativa %d/%d.", followup_id, exc, self.request.retries + 1, self.max_retries)
+        raise self.retry(exc=exc, countdown=60)
+
+    except Exception as exc:
+        logger.exception("Erro ao enviar follow-up %s.", followup_id)
+        raise self.retry(exc=exc, countdown=120)

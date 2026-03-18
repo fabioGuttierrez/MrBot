@@ -24,6 +24,7 @@ def create(request):
     tenant = request.tenant
     if not tenant:
         return redirect("tenants:onboarding")
+    from_wizard = request.GET.get("from_wizard") or request.POST.get("from_wizard", "")
     if request.method == "POST":
         name = request.POST.get("name", "").strip()
         department = request.POST.get("department", Department.GENERAL)
@@ -36,10 +37,14 @@ def create(request):
                 persona=persona,
             )
             messages.success(request, f'Bot "{bot.name}" criado com sucesso.')
+            if from_wizard:
+                from django.urls import reverse
+                return redirect(reverse("tenants:onboarding") + "?step=4")
             return redirect("bots:detail", bot_id=bot.id)
     return render(request, "bots/form.html", {
         "departments": Department.choices,
         "action": "create",
+        "from_wizard": from_wizard,
     })
 
 

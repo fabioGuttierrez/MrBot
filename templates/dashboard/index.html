@@ -26,15 +26,19 @@
     </div>
 
     <div class="bg-white rounded-2xl border border-gray-200 p-5">
-      <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">30 dias</p>
-      <p class="text-3xl font-bold text-gray-800 mt-1">{{ month_count }}</p>
-      <p class="text-xs text-gray-400 mt-1">conversas iniciadas</p>
+      <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Tempo médio resposta</p>
+      <p class="text-3xl font-bold text-blue-600 mt-1">
+        {% if avg_response_min %}{{ avg_response_min }}min{% else %}—{% endif %}
+      </p>
+      <p class="text-xs text-gray-400 mt-1">últimas 100 conversas</p>
     </div>
 
     <div class="bg-white rounded-2xl border border-gray-200 p-5">
-      <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Total</p>
-      <p class="text-3xl font-bold text-wa-dark mt-1">{{ total_count }}</p>
-      <p class="text-xs text-gray-400 mt-1">conversas no período</p>
+      <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Taxa de resolução</p>
+      <p class="text-3xl font-bold mt-1 {% if resolution_rate >= 70 %}text-wa-green{% elif resolution_rate >= 40 %}text-yellow-500{% else %}text-red-500{% endif %}">
+        {{ resolution_rate }}%
+      </p>
+      <p class="text-xs text-gray-400 mt-1">encerradas / 30 dias</p>
     </div>
 
   </div>
@@ -46,7 +50,6 @@
     <div class="bg-white rounded-2xl border border-gray-200 p-5">
       <h3 class="text-sm font-semibold text-gray-700 mb-4">Conversas por Status</h3>
       <div class="space-y-3">
-
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <div class="w-2.5 h-2.5 rounded-full bg-green-400"></div>
@@ -54,7 +57,6 @@
           </div>
           <span class="text-sm font-semibold text-gray-800">{{ by_status.bot }}</span>
         </div>
-
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <div class="w-2.5 h-2.5 rounded-full bg-blue-400"></div>
@@ -62,7 +64,6 @@
           </div>
           <span class="text-sm font-semibold text-gray-800">{{ by_status.human }}</span>
         </div>
-
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <div class="w-2.5 h-2.5 rounded-full bg-yellow-400"></div>
@@ -70,7 +71,6 @@
           </div>
           <span class="text-sm font-semibold text-gray-800">{{ by_status.pending }}</span>
         </div>
-
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <div class="w-2.5 h-2.5 rounded-full bg-gray-300"></div>
@@ -78,11 +78,10 @@
           </div>
           <span class="text-sm font-semibold text-gray-800">{{ by_status.closed }}</span>
         </div>
-
       </div>
     </div>
 
-    <!-- Mensagens e bots -->
+    <!-- Resumo -->
     <div class="bg-white rounded-2xl border border-gray-200 p-5">
       <h3 class="text-sm font-semibold text-gray-700 mb-4">Resumo (30 dias)</h3>
       <div class="space-y-4">
@@ -129,6 +128,43 @@
 
   </div>
 
+  <!-- Gráficos -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+    <div class="bg-white rounded-2xl border border-gray-200 p-5">
+      <h3 class="text-sm font-semibold text-gray-700 mb-4">Conversas por dia (30 dias)</h3>
+      <canvas id="chartDaily" height="120"></canvas>
+    </div>
+    <div class="bg-white rounded-2xl border border-gray-200 p-5">
+      <h3 class="text-sm font-semibold text-gray-700 mb-4">Horários de pico (mensagens recebidas)</h3>
+      <canvas id="chartPeak" height="120"></canvas>
+    </div>
+  </div>
+
+  <!-- Atendimento por agente -->
+  {% if by_agent %}
+  <div class="bg-white rounded-2xl border border-gray-200 p-5 mb-6">
+    <h3 class="text-sm font-semibold text-gray-700 mb-4">Atendimentos por agente (30 dias)</h3>
+    <div class="divide-y divide-gray-100">
+      {% for agent in by_agent %}
+      <div class="flex items-center justify-between py-3">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-xs font-bold">
+            {{ agent.assigned_to__first_name|first|upper }}{{ agent.assigned_to__last_name|first|upper }}
+          </div>
+          <div>
+            <p class="text-sm font-medium text-gray-800">
+              {{ agent.assigned_to__first_name }} {{ agent.assigned_to__last_name }}
+            </p>
+            <p class="text-xs text-gray-400">{{ agent.assigned_to__email }}</p>
+          </div>
+        </div>
+        <span class="text-sm font-semibold text-gray-800">{{ agent.count }} conv.</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   <!-- Conversas recentes -->
   <div class="bg-white rounded-2xl border border-gray-200 p-5">
     <h3 class="text-sm font-semibold text-gray-700 mb-4">Conversas Recentes</h3>
@@ -165,4 +201,71 @@
   </div>
 
 </div>
+
+{{ chart_labels|json_script:"chart-labels" }}
+{{ chart_data|json_script:"chart-data" }}
+{{ peak_labels|json_script:"peak-labels" }}
+{{ peak_data|json_script:"peak-data" }}
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+(function() {
+  const labels  = JSON.parse(document.getElementById('chart-labels').textContent);
+  const data    = JSON.parse(document.getElementById('chart-data').textContent);
+  const pLabels = JSON.parse(document.getElementById('peak-labels').textContent);
+  const pData   = JSON.parse(document.getElementById('peak-data').textContent);
+
+  const green = '#25D366';
+  const greenLight = 'rgba(37,211,102,0.15)';
+  const blue  = 'rgba(59,130,246,0.8)';
+
+  new Chart(document.getElementById('chartDaily'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Conversas',
+        data,
+        borderColor: green,
+        backgroundColor: greenLight,
+        fill: true,
+        tension: 0.4,
+        pointRadius: 3,
+        pointBackgroundColor: green,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxTicksLimit: 10, font: { size: 10 } } },
+        y: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } } }
+      }
+    }
+  });
+
+  new Chart(document.getElementById('chartPeak'), {
+    type: 'bar',
+    data: {
+      labels: pLabels,
+      datasets: [{
+        label: 'Mensagens',
+        data: pData,
+        backgroundColor: blue,
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 9 } } },
+        y: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } } }
+      }
+    }
+  });
+})();
+</script>
 {% endblock %}

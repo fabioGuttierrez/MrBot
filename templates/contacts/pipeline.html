@@ -1,0 +1,189 @@
+{% extends "base_app.html" %}
+{% block title %}Pipeline — MrBot{% endblock %}
+
+{% block app_content %}
+<div class="flex-1 flex flex-col overflow-hidden bg-gray-50">
+
+  <!-- Header -->
+  <div class="bg-white border-b px-6 py-3 flex items-center justify-between flex-shrink-0">
+    <div>
+      <h1 class="text-lg font-bold text-gray-800 uppercase tracking-wide">Funil de Contatos</h1>
+      <p class="text-xs text-gray-400 mt-0.5">Arraste para mover entre estágios</p>
+    </div>
+    <a href="{% url 'contacts:index' %}"
+       class="flex items-center gap-1.5 px-3 py-1.5 bg-wa-green hover:bg-wa-dark text-white text-xs font-semibold rounded-lg transition">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+      </svg>
+      Novo Contato
+    </a>
+  </div>
+
+  <!-- Kanban board -->
+  <div class="flex gap-3 p-4 overflow-x-auto flex-1">
+
+    <!-- Coluna: Lead -->
+    <div class="w-68 flex-shrink-0 flex flex-col" style="width:272px">
+      <div class="bg-white rounded-t-xl border-t-[3px] border-gray-400 border-x border-b-0 px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-bold text-gray-700">Lead</span>
+          <span id="count-lead" class="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{{ lead_contacts.count }}</span>
+        </div>
+      </div>
+      <div id="col-lead" data-stage="lead"
+           class="flex-1 bg-gray-50 border border-t-0 border-gray-200 rounded-b-xl p-2 space-y-2 min-h-40 overflow-y-auto">
+        {% for contact in lead_contacts %}
+          {% include "contacts/_pipeline_card.html" %}
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Coluna: Prospect -->
+    <div class="flex-shrink-0 flex flex-col" style="width:272px">
+      <div class="bg-white rounded-t-xl border-t-[3px] border-blue-400 border-x border-b-0 px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-bold text-gray-700">Prospect</span>
+          <span id="count-prospect" class="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">{{ prospect_contacts.count }}</span>
+        </div>
+      </div>
+      <div id="col-prospect" data-stage="prospect"
+           class="flex-1 bg-blue-50/30 border border-t-0 border-gray-200 rounded-b-xl p-2 space-y-2 min-h-40 overflow-y-auto">
+        {% for contact in prospect_contacts %}
+          {% include "contacts/_pipeline_card.html" %}
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Coluna: Cliente -->
+    <div class="flex-shrink-0 flex flex-col" style="width:272px">
+      <div class="bg-white rounded-t-xl border-t-[3px] border-wa-green border-x border-b-0 px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-bold text-gray-700">Cliente</span>
+          <span id="count-client" class="text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-full">{{ client_contacts.count }}</span>
+        </div>
+      </div>
+      <div id="col-client" data-stage="client"
+           class="flex-1 bg-green-50/20 border border-t-0 border-gray-200 rounded-b-xl p-2 space-y-2 min-h-40 overflow-y-auto">
+        {% for contact in client_contacts %}
+          {% include "contacts/_pipeline_card.html" %}
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Coluna: Inativo -->
+    <div class="flex-shrink-0 flex flex-col" style="width:272px">
+      <div class="bg-white rounded-t-xl border-t-[3px] border-gray-300 border-x border-b-0 px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-bold text-gray-700">Inativo</span>
+          <span id="count-inactive" class="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{{ inactive_contacts.count }}</span>
+        </div>
+      </div>
+      <div id="col-inactive" data-stage="inactive"
+           class="flex-1 bg-gray-100/40 border border-t-0 border-gray-200 rounded-b-xl p-2 space-y-2 min-h-40 overflow-y-auto">
+        {% for contact in inactive_contacts %}
+          {% include "contacts/_pipeline_card.html" %}
+        {% endfor %}
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="pipeline-toast"
+     style="opacity:0"
+     class="fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-xl text-sm font-medium text-white shadow-lg transition-all duration-300 pointer-events-none z-50 bg-wa-green">
+</div>
+
+{% csrf_token %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script>
+(function () {
+  const csrf  = document.querySelector('[name=csrfmiddlewaretoken]').value;
+  const toast = document.getElementById('pipeline-toast');
+  let toastTimer;
+
+  // ── activity badges ────────────────────────────────────────────────────────
+  document.querySelectorAll('[data-activity]').forEach(el => {
+    const ts = parseInt(el.dataset.activity, 10);
+    if (!ts) {
+      el.innerHTML = '<span class="flex items-center gap-1 text-[10px] text-gray-400"><span class="w-1.5 h-1.5 rounded-full bg-gray-300 inline-block"></span>Sem atividade</span>';
+      return;
+    }
+    const days = Math.floor((Date.now() / 1000 - ts) / 86400);
+    if (days === 0) {
+      el.innerHTML = '<span class="flex items-center gap-1 text-[10px] text-green-600 font-medium"><span class="w-1.5 h-1.5 rounded-full bg-green-500 inline-block"></span>Hoje</span>';
+    } else if (days <= 2) {
+      el.innerHTML = `<span class="flex items-center gap-1 text-[10px] text-yellow-600 font-medium"><span class="w-1.5 h-1.5 rounded-full bg-yellow-400 inline-block"></span>${days}d</span>`;
+    } else {
+      el.innerHTML = `<span class="flex items-center gap-1 text-[10px] text-red-500 font-medium"><span class="w-1.5 h-1.5 rounded-full bg-red-400 inline-block"></span>${days}d</span>`;
+    }
+  });
+
+  // ── toast ─────────────────────────────────────────────────────────────────
+  function showToast(msg, ok) {
+    clearTimeout(toastTimer);
+    toast.textContent = msg;
+    toast.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-xl text-sm font-medium text-white shadow-lg transition-all duration-300 z-50 '
+      + (ok ? 'bg-wa-green' : 'bg-red-500');
+    toast.style.opacity = '1';
+    toastTimer = setTimeout(() => { toast.style.opacity = '0'; }, 2500);
+  }
+
+  // ── counters ──────────────────────────────────────────────────────────────
+  function updateCounts() {
+    ['lead', 'prospect', 'client', 'inactive'].forEach(s => {
+      const col   = document.getElementById('col-' + s);
+      const badge = document.getElementById('count-' + s);
+      if (col && badge) badge.textContent = col.children.length;
+    });
+  }
+
+  // ── SortableJS ────────────────────────────────────────────────────────────
+  document.querySelectorAll('[id^="col-"]').forEach(col => {
+    Sortable.create(col, {
+      group:      'pipeline',
+      animation:  180,
+      ghostClass: 'opacity-30',
+      chosenClass:'ring-2 ring-wa-green ring-offset-2 scale-[1.02]',
+      dragClass:  'shadow-2xl',
+      onEnd(evt) {
+        const newStage = evt.to.dataset.stage;
+        const oldStage = evt.from.dataset.stage;
+        if (newStage === oldStage) return;
+
+        updateCounts();
+        const contactId = evt.item.dataset.contactId;
+
+        fetch('/contacts/' + contactId + '/stage/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRFToken': csrf,
+            'HX-Request':  'true',
+          },
+          body: 'stage=' + encodeURIComponent(newStage),
+        })
+        .then(r => {
+          if (r.ok) {
+            showToast('Estágio atualizado', true);
+          } else {
+            evt.from.insertBefore(evt.item, evt.from.children[evt.oldIndex] || null);
+            updateCounts();
+            showToast('Erro ao salvar.', false);
+          }
+        })
+        .catch(() => {
+          evt.from.insertBefore(evt.item, evt.from.children[evt.oldIndex] || null);
+          updateCounts();
+          showToast('Erro de conexão.', false);
+        });
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}

@@ -182,12 +182,25 @@ class EvolutionClient:
         {"instance": {"status": "connecting", "qrcode": "data:image/..."}}
 
         GET /instance/connect/{instance}
+
+        504/timeout são tratados como "connecting": o Baileys continua
+        processando em background e enviará o QR via webhook QRCODE_UPDATED.
         """
-        resp = self._get(
-            f"instance/connect/{self.instance_id}",
-            params={"pairingCode": "false"},
-            timeout=60.0,
-        )
+        try:
+            resp = self._get(
+                f"instance/connect/{self.instance_id}",
+                params={"pairingCode": "false"},
+                timeout=60.0,
+            )
+        except EvolutionError as exc:
+            exc_str = str(exc)
+            if "504" in exc_str or "timeout" in exc_str.lower():
+                logger.warning(
+                    "connect() %s — aguardando QR via webhook QRCODE_UPDATED",
+                    "504" if "504" in exc_str else "timeout",
+                )
+                return {"instance": {"status": "connecting", "qrcode": ""}}
+            raise
 
         # Tenta obter base64 da resposta (quando Evolution já envia)
         qr_base64 = resp.get("base64", "")

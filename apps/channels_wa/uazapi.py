@@ -1,78 +1,149 @@
 """
-Cliente de integração com uazapiGO v2.0.
-Documentação: OpenAPI spec incluída em Uazapi/uazapi-openapi-spec.yaml
+Cliente de integração com Evolution API v2.x
+Documentação: https://doc.evolution-api.com
 
 Autenticação:
-- Endpoints de instância: header 'token' (token da instância)
-- Endpoints admin:        header 'admintoken' (token global)
+- Todos os endpoints: header 'apikey' (global ou por instância)
+- Endpoints admin:   header 'apikey' com a chave global EVOLUTION_API_KEY
 
-As URLs NÃO incluem instance_id no path — a instância é identificada pelo token.
+Diferenças em relação ao UazAPI v2.0 (anterior):
+- Instance name vai no PATH, não no corpo da requisição
+- Header de auth é 'apikey' (não 'token')
+- Eventos webhook diferem (MESSAGES_UPSERT, CONNECTION_UPDATE, QRCODE_UPDATED)
+- QR code vem como raw string ('code'), não como base64 PNG
+  → geramos o PNG localmente com a lib 'qrcode'
+- Sem endpoint de bulk/campaign (/sender/simple)
 """
+import io
 import logging
 import httpx
+import qrcode
+import base64
 from django.conf import settings
+from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
+# TTL do QR code em cache (segundos) — QR codes do WhatsApp expiram em ~60s
+QR_CACHE_TTL = 90
+
 
 class UazAPIError(Exception):
-    pass
+    """Mantido com o nome anterior para compatibilidade de imports."""
+
+
+# Alias para código novo
+EvolutionError = UazAPIError
+
+
+def _qr_cache_key(instance_id: str) -> str:
+    return f"wa_qr:{instance_id}"
+
+
+def _build_qr_base64(code: str) -> str:
+    """
+    Converte a raw string do QR code (formato Baileys) em data URL base64 PNG.
+    'code' é a string entregue pelo campo 'code' do endpoint connect.
+    """
+    try:
+        qr = qrcode.QRCode(version=1, box_size=6, border=2)
+        qr.add_data(code)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        return f"data:image/png;base64,{b64}"
+    except Exception as exc:
+        logger.error("Erro ao gerar QR code PNG: %s", exc)
+        return ""
 
 
 class UazAPIClient:
     """
-    Cliente HTTP para a uazapiGO v2.0.
-    Cada instância WhatsApp tem seu próprio token.
+    Cliente HTTP para a Evolution API v2.
+    Mantém a mesma interface pública do cliente anterior (UazAPI v2.0)
+    para minimizar alterações no resto do projeto.
     """
 
     def __init__(self, instance_id: str, token: str):
+        """
+        instance_id: nome da instância (instance_name no Evolution)
+        token:       apikey por instância (hash.apikey retornado em create_instance)
+        """
         self.instance_id = instance_id
         self.token = token
-        self.base_url = settings.UAZAPI_BASE_URL.rstrip("/")
+        self.base_url = settings.EVOLUTION_API_URL.rstrip("/")
         self._headers = {
-            "token": self.token,
+            "apikey": self.token,
             "Content-Type": "application/json",
         }
 
     def _url(self, path: str) -> str:
         return f"{self.base_url}/{path.lstrip('/')}"
 
-    def _post(self, path: str, payload: dict) -> dict:
+    def _post(self, path: str, payload: dict) -> dict | list:
         url = self._url(path)
         try:
-            with httpx.Client(timeout=15.0) as client:
+            with httpx.Client(timeout=20.0) as client:
                 resp = client.post(url, json=payload, headers=self._headers)
                 resp.raise_for_status()
                 return resp.json()
         except httpx.HTTPStatusError as exc:
             logger.error(
-                "UazAPI HTTP %s — %s — payload: %s",
-                exc.response.status_code,
-                exc.response.text,
-                payload,
+                "Evolution API HTTP %s — %s — payload: %s",
+                exc.response.status_code, exc.response.text, payload,
             )
             raise UazAPIError(
-                f"UazAPI error {exc.response.status_code}: {exc.response.text}"
+                f"Evolution API error {exc.response.status_code}: {exc.response.text}"
             ) from exc
         except httpx.RequestError as exc:
-            logger.error("UazAPI request error: %s", exc)
-            raise UazAPIError(f"UazAPI request failed: {exc}") from exc
+            logger.error("Evolution API request error: %s", exc)
+            raise UazAPIError(f"Evolution API request failed: {exc}") from exc
 
-    def _get(self, path: str, params: dict | None = None) -> dict:
+    def _get(self, path: str, params: dict | None = None) -> dict | list:
         url = self._url(path)
         try:
-            with httpx.Client(timeout=15.0) as client:
+            with httpx.Client(timeout=20.0) as client:
                 resp = client.get(url, params=params, headers=self._headers)
                 resp.raise_for_status()
                 return resp.json()
         except httpx.HTTPStatusError as exc:
-            logger.error("UazAPI HTTP %s — %s", exc.response.status_code, exc.response.text)
+            logger.error("Evolution API HTTP %s — %s", exc.response.status_code, exc.response.text)
             raise UazAPIError(
-                f"UazAPI error {exc.response.status_code}: {exc.response.text}"
+                f"Evolution API error {exc.response.status_code}: {exc.response.text}"
             ) from exc
         except httpx.RequestError as exc:
-            logger.error("UazAPI request error: %s", exc)
-            raise UazAPIError(f"UazAPI request failed: {exc}") from exc
+            logger.error("Evolution API request error: %s", exc)
+            raise UazAPIError(f"Evolution API request failed: {exc}") from exc
+
+    def _delete(self, path: str) -> dict:
+        url = self._url(path)
+        try:
+            with httpx.Client(timeout=20.0) as client:
+                resp = client.delete(url, headers=self._headers)
+                resp.raise_for_status()
+                return resp.json()
+        except httpx.HTTPStatusError as exc:
+            raise UazAPIError(
+                f"Evolution API error {exc.response.status_code}: {exc.response.text}"
+            ) from exc
+        except httpx.RequestError as exc:
+            raise UazAPIError(f"Evolution API request failed: {exc}") from exc
+
+    def _put(self, path: str, payload: dict | None = None) -> dict:
+        url = self._url(path)
+        try:
+            with httpx.Client(timeout=20.0) as client:
+                resp = client.put(url, json=payload or {}, headers=self._headers)
+                resp.raise_for_status()
+                return resp.json()
+        except httpx.HTTPStatusError as exc:
+            raise UazAPIError(
+                f"Evolution API error {exc.response.status_code}: {exc.response.text}"
+            ) from exc
+        except httpx.RequestError as exc:
+            raise UazAPIError(f"Evolution API request failed: {exc}") from exc
 
     # ------------------------------------------------------------------
     # Instância
@@ -80,27 +151,97 @@ class UazAPIClient:
 
     def get_status(self) -> dict:
         """
-        Retorna o status atual da instância.
-        Quando status='connecting', response.instance.qrcode contém o QR em base64.
-        GET /instance/status
+        Retorna o status atual da instância normalizado para a interface anterior:
+        {"instance": {"status": "connected"|"connecting"|"disconnected", "qrcode": "data:image/...", "profileNumber": ""}}
+
+        GET /instance/connectionState/{instance}
         """
-        return self._get("instance/status")
+        resp = self._get(f"instance/connectionState/{self.instance_id}")
+        raw_state = resp.get("instance", {}).get("state", "close")
+
+        if raw_state == "open":
+            status = "connected"
+        elif raw_state == "connecting":
+            status = "connecting"
+        else:
+            status = "disconnected"
+
+        # QR code: lê do cache Redis (foi salvo pelo webhook QRCODE_UPDATED)
+        qr_code = cache.get(_qr_cache_key(self.instance_id), "")
+
+        return {
+            "instance": {
+                "status": status,
+                "qrcode": qr_code,
+                "profileNumber": "",
+            }
+        }
 
     def connect(self, phone: str | None = None) -> dict:
         """
-        Inicia conexão.
-        - Sem phone: gera QR code (response.instance.qrcode em base64).
-        - Com phone: gera código de pareamento (response.instance.paircode).
-        POST /instance/connect
+        Inicia conexão e retorna QR code (ou pairing code se phone fornecido).
+
+        - Sem phone: gera QR code, armazena em cache, retorna data URL PNG.
+        - Com phone: retorna pairing code de 8 dígitos (--> use get_pairing_code).
+
+        Normalizado para interface anterior:
+        {"instance": {"status": "connecting", "qrcode": "data:image/..."}}
+
+        GET /instance/connect/{instance}
         """
-        payload = {}
-        if phone:
-            payload["phone"] = self._normalize_phone(phone)
-        return self._post("instance/connect", payload)
+        resp = self._get(
+            f"instance/connect/{self.instance_id}",
+            params={"pairingCode": "false"},
+        )
+
+        # Tenta obter base64 da resposta (quando Evolution já envia)
+        qr_base64 = resp.get("base64", "")
+
+        # Fallback: gera PNG a partir do raw code string
+        if not qr_base64:
+            raw_code = resp.get("code", "")
+            if raw_code:
+                qr_base64 = _build_qr_base64(raw_code)
+
+        # Persiste no cache para que o polling encontre
+        if qr_base64:
+            cache.set(_qr_cache_key(self.instance_id), qr_base64, QR_CACHE_TTL)
+
+        return {
+            "instance": {
+                "status": "connecting",
+                "qrcode": qr_base64,
+            }
+        }
+
+    def get_pairing_code(self, phone: str) -> str:
+        """
+        Obtém código de pareamento por número de telefone (sem câmera).
+        Retorna string de 8 dígitos, ex: "ABCD-1234".
+
+        GET /instance/pairingCode/{instance}?number={phone}
+        """
+        normalized = self._normalize_phone(phone)
+        resp = self._get(
+            f"instance/pairingCode/{self.instance_id}",
+            params={"number": normalized},
+        )
+        return resp.get("pairingCode", resp.get("code", ""))
+
+    def restart(self) -> dict:
+        """
+        Reinicia o socket WhatsApp sem fazer logout (reconecta sem novo QR).
+        PUT /instance/restart/{instance}
+        """
+        return self._put(f"instance/restart/{self.instance_id}")
 
     def disconnect(self) -> dict:
-        """Desconecta a instância. POST /instance/disconnect"""
-        return self._post("instance/disconnect", {})
+        """
+        Desconecta a instância (logout do WhatsApp).
+        DELETE /instance/logout/{instance}
+        """
+        cache.delete(_qr_cache_key(self.instance_id))
+        return self._delete(f"instance/logout/{self.instance_id}")
 
     # ------------------------------------------------------------------
     # Mensagens de texto
@@ -117,26 +258,17 @@ class UazAPIClient:
     ) -> dict:
         """
         Envia mensagem de texto.
-        POST /send/text
-
-        Args:
-            phone:        Número destino (ex: '5511999999999') ou chatid (@s.whatsapp.net).
-            message:      Texto da mensagem.
-            delay:        Ms de simulação de digitação antes do envio.
-            track_id:     ID interno (Message.id) para rastreamento posterior.
-            track_source: Origem do tracking (padrão: 'mrbot').
+        POST /message/sendText/{instance}
         """
         payload: dict = {
             "number": self._normalize_phone(phone),
-            "text": message,
-            "readchat": True,
+            "options": {
+                "delay": delay,
+                "presence": "composing" if delay else "available",
+            },
+            "textMessage": {"text": message},
         }
-        if delay:
-            payload["delay"] = delay
-        if track_id:
-            payload["track_id"] = track_id
-            payload["track_source"] = track_source
-        return self._post("send/text", payload)
+        return self._post(f"message/sendText/{self.instance_id}", payload)
 
     def send_text_with_delay(
         self,
@@ -154,35 +286,42 @@ class UazAPIClient:
     # ------------------------------------------------------------------
 
     def send_image(self, phone: str, url: str, caption: str = "") -> dict:
-        """POST /send/media — image"""
+        """POST /message/sendMedia/{instance} — image"""
         payload = {
             "number": self._normalize_phone(phone),
-            "url": url,
-            "mimetype": "image/jpeg",
+            "mediaMessage": {
+                "mediaType": "image",
+                "media": url,
+                "mimetype": "image/jpeg",
+                "caption": caption,
+            },
         }
-        if caption:
-            payload["caption"] = caption
-        return self._post("send/media", payload)
+        return self._post(f"message/sendMedia/{self.instance_id}", payload)
 
     def send_document(self, phone: str, url: str, filename: str, caption: str = "") -> dict:
-        """POST /send/media — document"""
+        """POST /message/sendMedia/{instance} — document"""
         payload = {
             "number": self._normalize_phone(phone),
-            "url": url,
-            "filename": filename,
+            "mediaMessage": {
+                "mediaType": "document",
+                "media": url,
+                "fileName": filename,
+                "caption": caption,
+            },
         }
-        if caption:
-            payload["caption"] = caption
-        return self._post("send/media", payload)
+        return self._post(f"message/sendMedia/{self.instance_id}", payload)
 
     def send_audio(self, phone: str, url: str) -> dict:
-        """POST /send/media — audio (ptt)"""
+        """POST /message/sendMedia/{instance} — audio ptt"""
         payload = {
             "number": self._normalize_phone(phone),
-            "url": url,
-            "mimetype": "audio/ogg; codecs=opus",
+            "mediaMessage": {
+                "mediaType": "audio",
+                "media": url,
+                "mimetype": "audio/ogg; codecs=opus",
+            },
         }
-        return self._post("send/media", payload)
+        return self._post(f"message/sendMedia/{self.instance_id}", payload)
 
     def download_message(
         self,
@@ -193,21 +332,28 @@ class UazAPIClient:
         transcribe: bool = False,
     ) -> dict:
         """
-        Baixa o arquivo de uma mensagem de mídia e retorna URL pública.
-        POST /message/download
+        Obtém mídia de uma mensagem como base64.
+        POST /chat/getBase64FromMediaMessage/{instance}
 
-        Args:
-            message_id:  ID da mensagem (wa_message_id).
-            generate_mp3: Para áudios, retorna MP3 (True) ou OGG (False).
-            return_link:  Retorna URL pública do arquivo.
-            transcribe:   Transcreve áudios para texto via OpenAI Whisper.
+        Normaliza resposta para interface anterior:
+        retorna {'mediaUrl': url, 'text': transcription}
         """
-        return self._post("message/download", {
-            "id": message_id,
-            "generate_mp3": generate_mp3,
-            "return_link": return_link,
-            "transcribe": transcribe,
-        })
+        payload = {
+            "message": {"key": {"id": message_id}},
+            "convertToMp3": generate_mp3,
+        }
+        resp = self._post(f"chat/getBase64FromMediaMessage/{self.instance_id}", payload)
+
+        # Evolution retorna {base64: "...", mimetype: "..."} — não URL direta
+        # Normaliza para que tasks.py encontre as chaves esperadas
+        return {
+            "base64": resp.get("base64", ""),
+            "mimetype": resp.get("mimetype", ""),
+            "link": resp.get("url", resp.get("mediaUrl", "")),
+            "url": resp.get("url", resp.get("mediaUrl", "")),
+            "mediaUrl": resp.get("url", resp.get("mediaUrl", "")),
+            "text": resp.get("transcription", resp.get("text", "")),
+        }
 
     # ------------------------------------------------------------------
     # Chat / Contatos / Histórico
@@ -215,20 +361,28 @@ class UazAPIClient:
 
     def check_phone(self, phone: str) -> dict:
         """
-        Verifica se o número tem WhatsApp.
-        POST /chat/check
+        Verifica se número tem WhatsApp.
+        POST /chat/whatsappNumbers/{instance}
         """
-        return self._post("chat/check", {"number": self._normalize_phone(phone)})
+        resp = self._post(
+            f"chat/whatsappNumbers/{self.instance_id}",
+            {"numbers": [self._normalize_phone(phone)]},
+        )
+        # Evolution retorna lista; normalizamos para dict
+        if isinstance(resp, list) and resp:
+            item = resp[0]
+            return {"exists": item.get("exists", False), "jid": item.get("jid", "")}
+        return {"exists": False}
 
     def mark_messages_read(self, chatid: str) -> dict:
         """
-        Marca todas as mensagens de um chat como lidas no WhatsApp.
-        POST /message/markread
-
-        Args:
-            chatid: ID do chat no formato JID (ex: '5511999999999@s.whatsapp.net').
+        Marca mensagens de um chat como lidas.
+        POST /message/readMessages/{instance}
         """
-        return self._post("message/markread", {"chatid": chatid, "readall": True})
+        return self._post(
+            f"message/readMessages/{self.instance_id}",
+            {"readMessages": [{"key": {"remoteJid": chatid}}]},
+        )
 
     def find_chats(
         self,
@@ -239,62 +393,118 @@ class UazAPIClient:
         sort: str = "-wa_lastMsgTimestamp",
     ) -> dict:
         """
-        Lista chats com filtros e paginação.
-        POST /chat/find
+        Lista chats.
+        POST /chat/findChats/{instance}
 
-        Args:
-            limit:      Máximo de chats a retornar.
-            offset:     Página (paginação).
-            wa_isGroup: False = apenas individuais, True = apenas grupos.
-            sort:       Campo de ordenação (- = desc).
+        Normaliza resposta para que sync_session_history encontre os campos esperados.
         """
-        return self._post("chat/find", {
-            "wa_isGroup": wa_isGroup,
-            "sort": sort,
-            "limit": limit,
-            "offset": offset,
-        })
+        resp = self._post(f"chat/findChats/{self.instance_id}", {})
+        chats = resp if isinstance(resp, list) else resp.get("chats", [])
+
+        # Filtra grupos se necessário
+        if not wa_isGroup:
+            chats = [c for c in chats if not c.get("id", "").endswith("@g.us")]
+
+        # Normaliza campos para interface anterior
+        normalized = []
+        for chat in chats[:limit]:
+            jid = chat.get("id", chat.get("remoteJid", ""))
+            name = chat.get("name", chat.get("pushName", ""))
+            normalized.append({
+                "wa_chatid": jid,
+                "chatid": jid,
+                "wa_contactName": name,
+                "wa_name": name,
+                "wa_lastMsgTimestamp": chat.get("conversationTimestamp", 0),
+            })
+        return {"chats": normalized}
 
     def find_messages(self, chatid: str, *, limit: int = 50, offset: int = 0) -> dict:
         """
-        Busca mensagens de um chat específico com paginação.
-        POST /message/find
+        Busca mensagens de um chat.
+        POST /chat/findMessages/{instance}
 
-        Args:
-            chatid:  JID do chat (ex: '5511999999999@s.whatsapp.net').
-            limit:   Máximo de mensagens a retornar.
-            offset:  Deslocamento para paginação.
+        Normaliza resposta para interface anterior.
         """
-        return self._post("message/find", {
-            "chatid": chatid,
+        payload = {
+            "where": {"key": {"remoteJid": chatid}},
             "limit": limit,
             "offset": offset,
-        })
+        }
+        resp = self._post(f"chat/findMessages/{self.instance_id}", payload)
+        messages_raw = resp if isinstance(resp, list) else resp.get("messages", resp.get("records", []))
+
+        normalized = []
+        for msg in messages_raw:
+            key = msg.get("key", {})
+            message_content = msg.get("message", {})
+            text = (
+                message_content.get("conversation", "")
+                or message_content.get("extendedTextMessage", {}).get("text", "")
+            )
+            msg_type = msg.get("messageType", "conversation")
+            # Normaliza tipo para interface anterior (ex: imageMessage -> image)
+            normalized_type = _normalize_message_type(msg_type)
+            normalized.append({
+                "messageid": key.get("id", ""),
+                "id": key.get("id", ""),
+                "fromMe": key.get("fromMe", False),
+                "chatid": key.get("remoteJid", chatid),
+                "text": text,
+                "messageType": normalized_type,
+                "messageTimestamp": msg.get("messageTimestamp", 0),
+            })
+        return {"messages": normalized}
 
     def get_chat_details(self, chatid: str) -> dict:
         """
-        Retorna perfil completo de um contato ou grupo (nome, foto, etc).
-        POST /chat/details
+        Retorna perfil de um contato.
+        GET /chat/fetchProfile/{instance}?number={phone}
 
-        Args:
-            chatid: JID do chat (ex: '5511999999999@s.whatsapp.net').
+        Normaliza para interface anterior.
         """
-        return self._post("chat/details", {"chatid": chatid})
+        phone = chatid.split("@")[0]
+        try:
+            resp = self._get(
+                f"chat/fetchProfile/{self.instance_id}",
+                params={"number": phone},
+            )
+            name = resp.get("name", resp.get("pushName", ""))
+            return {
+                "name": name,
+                "pushName": resp.get("pushName", name),
+                "wa_contactName": name,
+                "wa_name": name,
+                "profilePicUrl": resp.get("profilePictureUrl", resp.get("profilePicUrl", "")),
+                "avatar": resp.get("profilePictureUrl", resp.get("profilePicUrl", "")),
+                "wa_profilePicUrl": resp.get("profilePictureUrl", ""),
+            }
+        except UazAPIError:
+            return {}
 
     def set_chat_labels(self, chatid: str, labels: list[str]) -> dict:
         """
-        Define as labels (etiquetas) de um chat no WhatsApp.
-        POST /chat/labels
-
-        Args:
-            chatid:  JID do chat.
-            labels:  Lista de nomes de etiquetas (ex: ['cliente', 'vip']).
+        Define labels de um chat.
+        POST /label/handleLabel/{instance}
         """
-        return self._post("chat/labels", {"chatid": chatid, "labels": labels})
+        try:
+            return self._post(
+                f"label/handleLabel/{self.instance_id}",
+                {"number": chatid, "labelId": labels[0] if labels else ""},
+            )
+        except UazAPIError:
+            return {}
 
     def get_labels(self) -> list:
-        """Retorna todas as etiquetas configuradas na instância. GET /labels"""
-        return self._get("labels")
+        """
+        Lista labels configuradas.
+        GET /label/findLabels/{instance}
+        """
+        try:
+            resp = self._get(f"label/findLabels/{self.instance_id}")
+            return resp if isinstance(resp, list) else []
+        except UazAPIError:
+            return []
 
     def send_menu(
         self,
@@ -306,25 +516,22 @@ class UazAPIClient:
     ) -> dict:
         """
         Envia mensagem interativa com botões.
-        POST /send/menu
-
-        Args:
-            phone:   Número destino.
-            title:   Título do menu.
-            body:    Corpo/texto principal.
-            buttons: Lista de botões: [{"id": "1", "text": "Opção 1"}, ...]
-            footer:  Rodapé opcional.
+        POST /message/sendButtons/{instance}
         """
+        evo_buttons = [
+            {"buttonId": str(b.get("id", i)), "buttonText": {"displayText": b.get("text", "")}}
+            for i, b in enumerate(buttons)
+        ]
         payload: dict = {
             "number": self._normalize_phone(phone),
-            "title": title,
-            "body": body,
-            "type": "buttons",
-            "buttons": buttons,
+            "buttonMessage": {
+                "title": title,
+                "description": body,
+                "footer": footer,
+                "buttons": evo_buttons,
+            },
         }
-        if footer:
-            payload["footer"] = footer
-        return self._post("send/menu", payload)
+        return self._post(f"message/sendButtons/{self.instance_id}", payload)
 
     def send_campaign(
         self,
@@ -335,56 +542,50 @@ class UazAPIClient:
         delay_max: int = 8000,
     ) -> dict:
         """
-        Cria uma campanha de envio em massa.
-        POST /sender/simple
-
-        Args:
-            numbers:   Lista de números destino.
-            message:   Texto da mensagem.
-            name:      Nome da campanha.
-            delay_min: Delay mínimo entre msgs (ms).
-            delay_max: Delay máximo entre msgs (ms).
+        Evolution API não possui endpoint de bulk send.
+        Lança UazAPIError para que o caller use o fallback de loop individual.
+        (tasks.py já possui esse fallback implementado)
         """
-        return self._post("sender/simple", {
-            "name": name,
-            "message": message,
-            "numbers": [self._normalize_phone(n) for n in numbers],
-            "delayMin": delay_min,
-            "delayMax": delay_max,
-        })
+        raise UazAPIError("Evolution API não suporta bulk send nativo. Use o loop individual.")
 
     # ------------------------------------------------------------------
     # Webhook
     # ------------------------------------------------------------------
 
-    def get_webhook(self) -> list:
+    def set_webhook(self, webhook_url: str, *, enabled: bool = True) -> dict:
         """
-        Retorna os webhooks configurados na instância.
-        GET /webhook  →  retorna lista de objetos webhook.
-        """
-        return self._get("webhook")
+        Configura webhook na instância.
+        POST /webhook/set/{instance}
 
-    def set_webhook(self, webhook_url: str, *, enabled: bool = True) -> list:
+        Inclui cabeçalho X-Webhook-Secret se configurado
+        (Evolution v2.2+ suporta headers personalizados).
         """
-        Configura webhook no modo simples (único webhook por instância).
-        POST /webhook
-
-        Events monitorados:
-          - messages       → novas mensagens recebidas/enviadas
-          - messages_update → atualizações de status (lido/entregue)
-          - connection     → conexão/desconexão
-
-        excludeMessages:
-          - wasSentByApi   → evita loop de mensagens enviadas pela API
-          - isGroupYes     → ignora mensagens de grupos (remova se quiser grupos)
-        """
-        payload = {
+        payload: dict = {
             "enabled": enabled,
             "url": webhook_url,
-            "events": ["messages", "messages_update", "connection"],
-            "excludeMessages": ["wasSentByApi", "isGroupYes"],
+            "webhookByEvents": False,
+            "webhookBase64": False,
+            "events": [
+                "MESSAGES_UPSERT",
+                "MESSAGES_UPDATE",
+                "CONNECTION_UPDATE",
+                "QRCODE_UPDATED",
+                "SEND_MESSAGE",
+            ],
         }
-        return self._post("webhook", payload)
+        try:
+            from django.conf import settings as dj_settings
+            secret = dj_settings.WEBHOOK_SECRET
+            if secret and secret != "changeme":
+                payload["headers"] = {"X-Webhook-Secret": secret}
+        except Exception:
+            pass
+
+        return self._post(f"webhook/set/{self.instance_id}", payload)
+
+    def get_webhook(self) -> dict:
+        """GET /webhook/find/{instance}"""
+        return self._get(f"webhook/find/{self.instance_id}")
 
     # ------------------------------------------------------------------
     # Utils
@@ -392,19 +593,36 @@ class UazAPIClient:
 
     @staticmethod
     def _normalize_phone(phone: str) -> str:
-        """
-        Garante que o número esteja apenas com dígitos (E.164 sem '+').
-        '5511 99999@s.whatsapp.net' → '5511999999'
-        '+55 11 99999-9999'          → '5511999999999'
-        '5511999999999@s.whatsapp.net' → '5511999999999'
-        """
-        # Remove sufixo JID se presente
         phone = phone.split("@")[0]
         return "".join(filter(str.isdigit, phone))
 
 
+# Alias para compatibilidade
+EvolutionClient = UazAPIClient
+
+
+def _normalize_message_type(msg_type: str) -> str:
+    """
+    Converte tipos de mensagem do Evolution para o formato legado esperado pelo sistema.
+    Evolution: 'imageMessage', 'audioMessage', etc.
+    Legado: 'image', 'audio', etc.
+    """
+    TYPE_MAP = {
+        "imageMessage":    "image",
+        "videoMessage":    "video",
+        "audioMessage":    "audio",
+        "pttMessage":      "ptt",
+        "documentMessage": "document",
+        "stickerMessage":  "sticker",
+        "ptvMessage":      "video",
+        "conversation":    "conversation",
+        "extendedTextMessage": "conversation",
+    }
+    return TYPE_MAP.get(msg_type, msg_type)
+
+
 def get_client_for_session(session) -> UazAPIClient:
-    """Retorna um UazAPIClient configurado para uma WhatsAppSession."""
+    """Retorna um cliente Evolution configurado para uma WhatsAppSession."""
     return UazAPIClient(
         instance_id=session.instance_id,
         token=session.token,
@@ -413,30 +631,41 @@ def get_client_for_session(session) -> UazAPIClient:
 
 def create_instance(instance_name: str) -> dict:
     """
-    Cria uma nova instância WhatsApp via endpoint admin da UazAPI.
-    POST /instance/init — requer UAZAPI_GLOBAL_TOKEN (admintoken).
+    Cria uma nova instância WhatsApp via endpoint admin da Evolution API.
+    POST /instance/create — requer EVOLUTION_API_KEY (global admin key).
 
     Returns: {'name': str, 'token': str}
+    (compatível com a interface anterior do UazAPI)
     """
-    base_url = settings.UAZAPI_BASE_URL.rstrip("/")
-    url = f"{base_url}/instance/init"
+    base_url = settings.EVOLUTION_API_URL.rstrip("/")
+    url = f"{base_url}/instance/create"
     headers = {
-        "admintoken": settings.UAZAPI_GLOBAL_TOKEN,
+        "apikey": settings.EVOLUTION_API_KEY,
         "Content-Type": "application/json",
     }
+    payload = {
+        "instanceName": instance_name,
+        "qrcode": True,
+        "integration": "WHATSAPP-BAILEYS",
+    }
     try:
-        with httpx.Client(timeout=15.0) as client:
-            resp = client.post(url, json={"name": instance_name}, headers=headers)
+        with httpx.Client(timeout=20.0) as client:
+            resp = client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
             data = resp.json()
-            return {"name": data["name"], "token": data["token"]}
+            instance_data = data.get("instance", data)
+            hash_data = data.get("hash", {})
+            # Normaliza para interface anterior: {name, token}
+            return {
+                "name": instance_data.get("instanceName", instance_name),
+                "token": hash_data.get("apikey", ""),
+            }
     except httpx.HTTPStatusError as exc:
         logger.error(
-            "UazAPI create_instance HTTP %s — %s",
-            exc.response.status_code,
-            exc.response.text,
+            "Evolution API create_instance HTTP %s — %s",
+            exc.response.status_code, exc.response.text,
         )
         raise UazAPIError(f"Erro ao criar instância: {exc.response.text}") from exc
     except httpx.RequestError as exc:
-        logger.error("UazAPI create_instance request error: %s", exc)
-        raise UazAPIError(f"Erro de conexão com UazAPI: {exc}") from exc
+        logger.error("Evolution API create_instance request error: %s", exc)
+        raise UazAPIError(f"Erro de conexão com Evolution API: {exc}") from exc

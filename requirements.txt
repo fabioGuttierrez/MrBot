@@ -19,8 +19,11 @@ django-celery-results>=2.5.1
 # OpenAI
 openai>=1.30.1
 
-# HTTP client (chamadas UazAPI)
+# HTTP client (chamadas Evolution API)
 httpx>=0.27.0
+
+# QR Code generation (Evolution API — gera PNG localmente a partir do raw code)
+qrcode>=7.4.2
 
 # Frontend helpers
 django-htmx>=1.19.0

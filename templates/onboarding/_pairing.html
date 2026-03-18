@@ -1,0 +1,52 @@
+{% if step == "code" %}
+{# Exibe código de pareamento gerado #}
+<div class="text-center py-2">
+  <div class="inline-block p-5 bg-gray-50 rounded-2xl border border-gray-200 mb-4">
+    <p class="text-xs text-gray-500 mb-2 font-medium uppercase tracking-wide">Código de pareamento</p>
+    <p class="text-3xl font-mono font-bold tracking-widest text-gray-800">{{ pairing_code }}</p>
+  </div>
+  <p class="text-sm text-gray-600 font-medium">Digite este código no WhatsApp:</p>
+  <p class="text-xs text-gray-400 mt-1">Aparelhos conectados → Conectar aparelho → Conectar com número de telefone</p>
+  <div class="flex items-center justify-center gap-2 mt-3"
+       hx-get="{% url 'tenants:onboarding_wa_status' %}"
+       hx-trigger="every 3s"
+       hx-target="#qr-area"
+       hx-swap="innerHTML">
+    <div class="w-2 h-2 bg-wa-green rounded-full animate-pulse"></div>
+    <span class="text-xs text-gray-400">Aguardando confirmação...</span>
+  </div>
+  <p class="text-xs text-gray-400 mt-4">
+    <button hx-get="{% url 'tenants:onboarding_wa_connect' %}"
+            hx-target="#qr-area" hx-swap="innerHTML"
+            class="text-wa-green underline">Voltar para QR code</button>
+  </p>
+</div>
+
+{% else %}
+{# Formulário para inserir número e gerar código #}
+<div class="text-center py-2">
+  <p class="text-sm text-gray-600 mb-4">Digite o número da sua linha WhatsApp (com DDD e código do país):</p>
+  <form hx-post="{% url 'tenants:onboarding_wa_pairing_code' %}"
+        hx-target="#qr-area"
+        hx-swap="innerHTML"
+        class="space-y-3">
+    {% csrf_token %}
+    <input type="tel" name="phone"
+           placeholder="+55 11 99999-9999"
+           required
+           class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-wa-green text-center tracking-wide">
+    {% if error %}
+    <p class="text-xs text-red-500">{{ error }}</p>
+    {% endif %}
+    <button type="submit"
+            class="w-full px-4 py-2.5 bg-wa-green hover:bg-wa-dark text-white text-sm font-semibold rounded-lg transition">
+      Gerar código de pareamento
+    </button>
+  </form>
+  <p class="text-xs text-gray-400 mt-4">
+    <button hx-get="{% url 'tenants:onboarding_wa_connect' %}"
+            hx-target="#qr-area" hx-swap="innerHTML"
+            class="text-wa-green underline">Voltar para QR code</button>
+  </p>
+</div>
+{% endif %}

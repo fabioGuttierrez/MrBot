@@ -149,6 +149,52 @@ def onboarding_wa_status(request):
     return render(request, "onboarding/_qr.html", {
         "status": status,
         "qr_code": qr_code,
-        "session_id": str(session.id),
         "phone_number": session.phone_number,
+    })
+
+
+@login_required
+def onboarding_wa_pairing_code(request):
+    """
+    HTMX: gera código de pareamento para conectar sem câmera.
+    GET  — exibe formulário de telefone.
+    POST — gera e exibe o código de 8 caracteres.
+    """
+    tenant = request.tenant
+    if not tenant:
+        return HttpResponse(
+            '<p class="text-red-500 text-sm text-center">Crie sua empresa primeiro.</p>',
+            status=400,
+        )
+
+    if request.method == "GET":
+        return render(request, "onboarding/_pairing.html", {"step": "form"})
+
+    phone = request.POST.get("phone", "").strip()
+    if not phone:
+        return render(request, "onboarding/_pairing.html", {
+            "step": "form",
+            "error": "Informe o número de telefone.",
+        })
+
+    session = tenant.wa_sessions.filter(is_active=True).first()
+    if not session:
+        # Tenta criar a sessão primeiro
+        return render(request, "onboarding/_pairing.html", {
+            "step": "form",
+            "error": "Clique em 'Conectar com QR code' para iniciar a instância antes de usar o código.",
+        })
+
+    client = UazAPIClient(session.instance_id, session.token)
+    try:
+        code = client.get_pairing_code(phone)
+    except UazAPIError as exc:
+        return render(request, "onboarding/_pairing.html", {
+            "step": "form",
+            "error": str(exc),
+        })
+
+    return render(request, "onboarding/_pairing.html", {
+        "step": "code",
+        "pairing_code": code,
     })

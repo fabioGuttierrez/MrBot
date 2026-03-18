@@ -21,7 +21,7 @@
     </svg>
   </div>
   <p class="text-sm font-medium text-red-600">Erro ao conectar</p>
-  <p class="text-xs text-gray-400 mt-1 max-w-xs mx-auto">{{ error|default:"Verifique as configurações da UazAPI e tente novamente." }}</p>
+  <p class="text-xs text-gray-400 mt-1 max-w-xs mx-auto">{{ error|default:"Verifique as configurações da Evolution API e tente novamente." }}</p>
   <button
     hx-get="{% url 'channels_wa:session_reconnect' %}"
     hx-target="#qr-area"
@@ -47,6 +47,11 @@
     <div class="w-2 h-2 bg-wa-green rounded-full animate-pulse"></div>
     <span class="text-xs text-gray-400">Aguardando leitura...</span>
   </div>
+  <p class="text-xs text-gray-400 mt-4">Sem câmera?
+    <button hx-get="{% url 'channels_wa:session_pairing_code' %}"
+            hx-target="#qr-area" hx-swap="innerHTML"
+            class="text-wa-green underline">Use o código de pareamento</button>
+  </p>
 </div>
 
 {% else %}

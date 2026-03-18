@@ -165,6 +165,15 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = "America/Sao_Paulo"
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
+# Health-check de sessões WhatsApp: verifica e reconecta a cada 5 minutos
+from celery.schedules import crontab
+CELERY_BEAT_SCHEDULE = {
+    "wa-session-health-check": {
+        "task": "channels_wa.check_and_reconnect_sessions",
+        "schedule": crontab(minute="*/5"),
+    },
+}
+
 # --------------------------------------------------------------------------
 # Redis (cache e sessions)
 # --------------------------------------------------------------------------
@@ -212,10 +221,14 @@ OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
 OPENAI_MODEL = "gpt-4o"
 
 # --------------------------------------------------------------------------
-# UazAPI
+# Evolution API (WhatsApp)
 # --------------------------------------------------------------------------
-UAZAPI_BASE_URL = env("UAZAPI_BASE_URL", default="")
-UAZAPI_GLOBAL_TOKEN = env("UAZAPI_GLOBAL_TOKEN", default="")
+EVOLUTION_API_URL = env("EVOLUTION_API_URL", default="http://localhost:8080")
+EVOLUTION_API_KEY = env("EVOLUTION_API_KEY", default="")
+
+# Retrocompatibilidade — removidos em versão futura
+UAZAPI_BASE_URL = env("UAZAPI_BASE_URL", default=EVOLUTION_API_URL)
+UAZAPI_GLOBAL_TOKEN = env("UAZAPI_GLOBAL_TOKEN", default=EVOLUTION_API_KEY)
 
 # --------------------------------------------------------------------------
 # MrBot config

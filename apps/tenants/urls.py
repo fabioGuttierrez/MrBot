@@ -8,4 +8,5 @@ urlpatterns = [
     path("onboarding/create/", views.onboarding_create_tenant, name="onboarding_create_tenant"),
     path("onboarding/wa/connect/", views.onboarding_wa_connect, name="onboarding_wa_connect"),
     path("onboarding/wa/status/", views.onboarding_wa_status, name="onboarding_wa_status"),
+    path("onboarding/wa/pairing/", views.onboarding_wa_pairing_code, name="onboarding_wa_pairing_code"),
 ]

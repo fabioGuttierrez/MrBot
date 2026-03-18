@@ -761,3 +761,50 @@ def send_followup_task(self, followup_id: str):
     except Exception as exc:
         logger.exception("Erro ao enviar follow-up %s.", followup_id)
         raise self.retry(exc=exc, countdown=120)
+
+
+# ─── Health-Check automático de sessões ───────────────────────────────────────
+
+@shared_task(bind=True, max_retries=0, name="channels_wa.check_and_reconnect_sessions")
+def check_and_reconnect_sessions(self):
+    """
+    Verifica todas as sessões WhatsApp ativas e tenta reconectar as desconectadas.
+    Configurar no Celery Beat: cada 5 minutos.
+
+    Lógica:
+    - Se a Evolution API reporta 'close'/'disconnected' mas o banco diz CONNECTED
+      → chama restart() (reconecta sem novo QR — preserva sessão autenticada)
+    - Se restart() falhar → atualiza status para DISCONNECTED (admin deve reconectar)
+    """
+    from apps.channels_wa.models import WhatsAppSession, SessionStatus
+    from apps.channels_wa.uazapi import get_client_for_session, UazAPIError
+
+    sessions = WhatsAppSession.objects.filter(is_active=True)
+    for session in sessions:
+        try:
+            client = get_client_for_session(session)
+            resp = client.get_status()
+            api_status = resp.get("instance", {}).get("status", "disconnected")
+
+            if api_status in ("disconnected", "close") and session.status == SessionStatus.CONNECTED:
+                logger.info(
+                    "Health-check: sessão %s desconectada — tentando restart.",
+                    session.id,
+                )
+                try:
+                    client.restart()
+                    session.status = SessionStatus.CONNECTING
+                    session.save(update_fields=["status"])
+                except UazAPIError as restart_exc:
+                    logger.error("Restart falhou para sessão %s: %s", session.id, restart_exc)
+                    session.status = SessionStatus.DISCONNECTED
+                    session.save(update_fields=["status"])
+
+            elif api_status in ("connected", "open") and session.status != SessionStatus.CONNECTED:
+                session.status = SessionStatus.CONNECTED
+                session.save(update_fields=["status"])
+
+        except UazAPIError as exc:
+            logger.warning("Health-check: erro ao verificar sessão %s: %s", session.id, exc)
+        except Exception:
+            logger.exception("Health-check: erro inesperado para sessão %s.", session.id)

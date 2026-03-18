@@ -1,8 +1,8 @@
 """
 Views do app channels_wa.
 
-- webhook_receiver: recebe eventos da uazapiGO v2.0
-- sessions_list / session_reconnect / session_status / session_disconnect:
+- webhook_receiver: recebe eventos da Evolution API v2.x
+- sessions_list / session_reconnect / session_status / session_disconnect / session_pairing_code:
   gerenciamento de sessões WhatsApp pelo painel
 """
 import json
@@ -16,12 +16,12 @@ from django.conf import settings
 
 from apps.tenants.models import Tenant
 from .models import WhatsAppSession, SessionStatus
-from .uazapi import UazAPIClient, UazAPIError, create_instance
+from .uazapi import UazAPIClient, UazAPIError, create_instance, _normalize_message_type
 
 logger = logging.getLogger(__name__)
 
-# Eventos que processamos
-HANDLED_EVENTS = {"messages", "connection"}
+# Eventos Evolution API que processamos
+HANDLED_EVENTS = {"MESSAGES_UPSERT", "CONNECTION_UPDATE", "QRCODE_UPDATED"}
 
 
 def _fix_encoding(text: str) -> str:
@@ -87,9 +87,11 @@ def webhook_receiver(request, tenant_slug: str, instance_id: str):
         is_active=True,
     )
 
-    if event == "connection":
+    if event == "CONNECTION_UPDATE":
         _handle_connection_event(session, payload)
-    else:
+    elif event == "QRCODE_UPDATED":
+        _handle_qrcode_event(session, payload)
+    else:  # MESSAGES_UPSERT
         _handle_message_event(tenant, session, payload)
 
     return JsonResponse({"ok": True})
@@ -97,21 +99,22 @@ def webhook_receiver(request, tenant_slug: str, instance_id: str):
 
 def _handle_connection_event(session, payload: dict):
     """
-    Trata eventos de conexão/desconexão da instância.
+    Trata eventos CONNECTION_UPDATE da Evolution API.
+    data.state: 'open' | 'connecting' | 'close'
     Quando conectado, dispara sync do histórico em background.
     """
     from .tasks import sync_session_history
     from .models import SessionStatus
 
     data = payload.get("data", {})
-    status = (data.get("status") or data.get("state") or "").lower()
+    # Evolution usa 'state'; fallback para 'status' por segurança
+    status = (data.get("state") or data.get("status") or "").lower()
 
-    logger.info("Evento de conexão | session=%s status=%s", session.id, status)
+    logger.info("Evento CONNECTION_UPDATE | session=%s state=%s", session.id, status)
 
     if status in ("connected", "open"):
         session.status = SessionStatus.CONNECTED
         session.save(update_fields=["status"])
-        # Dispara sincronização de histórico em background
         sync_session_history.delay(session_id=str(session.id))
         logger.info("Sync de histórico agendado | session=%s", session.id)
 
@@ -124,75 +127,100 @@ def _handle_connection_event(session, payload: dict):
         session.save(update_fields=["status"])
 
 
-def _handle_message_event(tenant, session, payload: dict):
-    """Extrai dados do payload v2.0 e aciona a lógica de processamento."""
-    from .tasks import schedule_message_processing, schedule_media_processing
+def _handle_qrcode_event(session, payload: dict):
+    """
+    Trata eventos QRCODE_UPDATED da Evolution API.
+    Atualiza o QR code em cache Redis para que o polling o exiba imediatamente.
+    """
+    from django.core.cache import cache
+    from .uazapi import _qr_cache_key, QR_CACHE_TTL
 
     data = payload.get("data", {})
+    qr_base64 = data.get("qrcode", {}).get("base64", "")
+    if qr_base64:
+        cache.set(_qr_cache_key(session.instance_id), qr_base64, QR_CACHE_TTL)
+        logger.info("QR code atualizado via webhook | session=%s", session.id)
 
-    # ── Filtros obrigatórios ──────────────────────────────────────────
-    # Ignora mensagens enviadas pelo próprio número
-    if data.get("fromMe", False):
-        return
 
-    # Ignora mensagens enviadas via API (evita loops)
-    if data.get("wasSentByApi", False):
-        return
+def _handle_message_event(tenant, session, payload: dict):
+    """
+    Trata eventos MESSAGES_UPSERT da Evolution API v2.
+    'data' é uma lista de mensagens; processa cada uma individualmente.
+    """
+    from .tasks import schedule_message_processing, schedule_media_processing
 
-    # Ignora mensagens de grupos (chatid termina em @g.us)
-    chat_id: str = data.get("chatid", "")
-    if chat_id.endswith("@g.us") or data.get("isGroup", False):
-        return
+    messages = payload.get("data", [])
+    if isinstance(messages, dict):
+        # Fallback: algumas versões da Evolution enviam dict em vez de lista
+        messages = [messages]
 
-    # ── Extração dos campos ──────────────────────────────────────────
-    # Extrai número do chatid: "5511999999999@s.whatsapp.net" → "5511999999999"
-    phone = chat_id.split("@")[0]
-    if not phone or not phone.isdigit():
-        logger.debug("chatid inválido ou não numérico: %s", chat_id)
-        return
+    for msg in messages:
+        key = msg.get("key", {})
 
-    msg_type: str = data.get("messageType", "")
-    push_name: str = _fix_encoding(data.get("senderName", ""))
-    wa_message_id: str = data.get("messageid", "")
-    text: str = _fix_encoding(data.get("text", "").strip())
+        # ── Filtros obrigatórios ──────────────────────────────────────────
+        # Ignora mensagens enviadas pelo próprio número
+        if key.get("fromMe", False):
+            continue
 
-    # ── Roteamento por tipo ──────────────────────────────────────────
-    if text:
-        # Mensagem de texto normal → buffer de concatenação
-        logger.info(
-            "Webhook v2.0 | tenant=%s | phone=%s | tipo=%s | msg=%.80s",
-            tenant.slug, phone, msg_type, text,
+        # Ignora mensagens de grupos (remoteJid termina em @g.us)
+        chat_id: str = key.get("remoteJid", "")
+        if chat_id.endswith("@g.us"):
+            continue
+
+        # ── Extração dos campos ──────────────────────────────────────────
+        phone = chat_id.split("@")[0]
+        if not phone or not phone.isdigit():
+            logger.debug("remoteJid inválido ou não numérico: %s", chat_id)
+            continue
+
+        msg_type_raw: str = msg.get("messageType", "")
+        msg_type: str = _normalize_message_type(msg_type_raw)
+        push_name: str = _fix_encoding(msg.get("pushName", ""))
+        wa_message_id: str = key.get("id", "")
+
+        # Extrai texto (conversation ou extendedTextMessage)
+        msg_content = msg.get("message", {})
+        raw_text = (
+            msg_content.get("conversation", "")
+            or msg_content.get("extendedTextMessage", {}).get("text", "")
         )
-        schedule_message_processing(
-            tenant_id=str(tenant.id),
-            session_id=str(session.id),
-            phone=phone,
-            text=text,
-            push_name=push_name,
-            wa_message_id=wa_message_id,
-            concat_delay=tenant.message_concat_delay,
-        )
+        text: str = _fix_encoding(raw_text.strip())
 
-    elif msg_type in MEDIA_TYPES and wa_message_id:
-        # Mensagem de mídia sem texto → download assíncrono
-        logger.info(
-            "Webhook v2.0 | tenant=%s | phone=%s | mídia=%s | id=%s",
-            tenant.slug, phone, msg_type, wa_message_id,
-        )
-        schedule_media_processing(
-            tenant_id=str(tenant.id),
-            session_id=str(session.id),
-            phone=phone,
-            push_name=push_name,
-            wa_message_id=wa_message_id,
-            media_type=msg_type,
-        )
+        # ── Roteamento por tipo ──────────────────────────────────────────
+        if text:
+            logger.info(
+                "Webhook MESSAGES_UPSERT | tenant=%s | phone=%s | tipo=%s | msg=%.80s",
+                tenant.slug, phone, msg_type, text,
+            )
+            schedule_message_processing(
+                tenant_id=str(tenant.id),
+                session_id=str(session.id),
+                phone=phone,
+                text=text,
+                push_name=push_name,
+                wa_message_id=wa_message_id,
+                concat_delay=tenant.message_concat_delay,
+            )
 
-    else:
-        logger.debug(
-            "Mensagem sem texto nem mídia reconhecida (tipo=%s) de %s — ignorando.",
-            msg_type, phone,
-        )
+        elif msg_type in MEDIA_TYPES and wa_message_id:
+            logger.info(
+                "Webhook MESSAGES_UPSERT | tenant=%s | phone=%s | mídia=%s | id=%s",
+                tenant.slug, phone, msg_type, wa_message_id,
+            )
+            schedule_media_processing(
+                tenant_id=str(tenant.id),
+                session_id=str(session.id),
+                phone=phone,
+                push_name=push_name,
+                wa_message_id=wa_message_id,
+                media_type=msg_type,
+            )
+
+        else:
+            logger.debug(
+                "Mensagem sem texto nem mídia reconhecida (tipo=%s) de %s — ignorando.",
+                msg_type, phone,
+            )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -316,3 +344,46 @@ def session_disconnect(request):
         session.save(update_fields=["status"])
 
     return redirect("channels_wa:sessions")
+
+
+@login_required
+def session_pairing_code(request):
+    """
+    HTMX: gera código de pareamento para conectar sem câmera.
+    GET  — exibe formulário de telefone.
+    POST — gera e exibe o código de 8 caracteres.
+    """
+    tenant = request.tenant
+    if not tenant:
+        return HttpResponseForbidden("Sem tenant.")
+
+    if request.method == "GET":
+        return render(request, "channels_wa/_session_pairing.html", {"step": "form"})
+
+    phone = request.POST.get("phone", "").strip()
+    if not phone:
+        return render(request, "channels_wa/_session_pairing.html", {
+            "step": "form",
+            "error": "Informe o número de telefone.",
+        })
+
+    session = tenant.wa_sessions.filter(is_active=True).first()
+    if not session:
+        return render(request, "channels_wa/_session_pairing.html", {
+            "step": "form",
+            "error": "Nenhuma sessão WhatsApp ativa. Clique em Conectar primeiro.",
+        })
+
+    client = UazAPIClient(session.instance_id, session.token)
+    try:
+        code = client.get_pairing_code(phone)
+    except UazAPIError as exc:
+        return render(request, "channels_wa/_session_pairing.html", {
+            "step": "form",
+            "error": str(exc),
+        })
+
+    return render(request, "channels_wa/_session_pairing.html", {
+        "step": "code",
+        "pairing_code": code,
+    })

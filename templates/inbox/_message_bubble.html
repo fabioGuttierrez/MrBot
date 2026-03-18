@@ -1,5 +1,5 @@
 {% load humanize %}
-<div class="flex {% if message.direction == 'out' %}justify-end{% else %}justify-start{% endif %} mb-1">
+<div data-msg-id="{{ message.id }}" class="flex {% if message.direction == 'out' %}justify-end{% else %}justify-start{% endif %} mb-1">
   <div class="max-w-[70%] px-3 py-2 rounded-2xl text-sm shadow-sm
     {% if message.direction == 'out' %}bg-wa-bubble text-white rounded-br-sm
     {% else %}bg-white text-gray-800 rounded-bl-sm{% endif %}">

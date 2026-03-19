@@ -139,6 +139,21 @@
                      opacity-0 group-hover:opacity-100 transition-opacity">Follow-ups</span>
       </a>
 
+      <!-- Agenda -->
+      <a href="{% url 'bookings:calendar' %}"
+         title="Agenda"
+         class="group relative flex flex-col items-center gap-0.5 p-2 rounded-xl transition
+           {% if request.resolver_match.app_name == 'bookings' %}bg-white/20 text-white{% else %}text-gray-400 hover:bg-white/10 hover:text-white{% endif %}">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+        </svg>
+        <span class="text-[9px] font-medium leading-none">Agenda</span>
+        <span class="pointer-events-none absolute left-full ml-2 top-1/2 -translate-y-1/2
+                     bg-gray-900 text-white text-xs rounded-lg px-2 py-1 whitespace-nowrap
+                     opacity-0 group-hover:opacity-100 transition-opacity">Agenda</span>
+      </a>
+
       <!-- Dashboard -->
       <a href="{% url 'dashboard:index' %}"
          title="Dashboard"

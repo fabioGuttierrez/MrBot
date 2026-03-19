@@ -17,6 +17,7 @@ urlpatterns = [
     path("contacts/", include("apps.contacts.urls", namespace="contacts")),
     path("billing/", include("apps.billing.urls", namespace="billing")),
     path("dashboard/", include("apps.dashboard.urls", namespace="dashboard")),
+    path("bookings/", include("apps.bookings.urls", namespace="bookings")),
     path("", include("apps.tenants.urls", namespace="tenants")),
 
     # Webhook Evolution API

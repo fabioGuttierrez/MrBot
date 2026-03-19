@@ -32,6 +32,13 @@ class Bot(TimeStampedModel):
     temperature = models.FloatField(_("temperatura"), default=0.7)
     max_tokens = models.PositiveIntegerField(_("máx. tokens resposta"), default=500)
 
+    # Ferramentas (function calling)
+    tools_enabled = models.BooleanField(
+        _("ferramentas ativas"),
+        default=False,
+        help_text=_("Ativa function calling (ex: verificação de disponibilidade via Bookings)"),
+    )
+
     class Meta:
         verbose_name = _("Bot")
         verbose_name_plural = _("Bots")

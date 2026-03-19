@@ -1,0 +1,146 @@
+{% extends "base_app.html" %}
+{% block title %}Próximos Compromissos | MrBot{% endblock %}
+
+{% block app_content %}
+<div class="flex flex-col h-full overflow-hidden bg-gray-50">
+
+  <!-- ── Cabeçalho ── -->
+  <div class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
+    <div class="flex items-center gap-6">
+      <div>
+        <h1 class="text-lg font-bold text-gray-800">Agenda</h1>
+      </div>
+      <!-- Tabs -->
+      <div class="flex gap-1 bg-gray-100 rounded-xl p-1">
+        <a href="{% url 'bookings:calendar' %}"
+           class="px-4 py-1.5 text-sm font-medium rounded-lg text-gray-500 hover:text-gray-700 transition">
+          Calendário
+        </a>
+        <a href="{% url 'bookings:upcoming' %}"
+           class="px-4 py-1.5 text-sm font-medium rounded-lg bg-white text-gray-800 shadow-sm">
+          Próximos
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Lista de próximos compromissos ── -->
+  <div class="flex-1 overflow-auto py-6 px-6 flex justify-center">
+    <div class="w-full max-w-2xl">
+
+      {% if grouped %}
+
+        {% for group in grouped %}
+        <div class="mb-6">
+
+          <!-- Data -->
+          <div class="flex items-center gap-3 mb-2">
+            <div class="flex-shrink-0 text-center">
+              {% if group.date == today %}
+              <div class="w-10 h-10 rounded-xl bg-blue-500 flex flex-col items-center justify-center">
+                <span class="text-[9px] text-blue-100 font-semibold uppercase leading-none">Hoje</span>
+                <span class="text-base font-bold text-white leading-tight">{{ group.date|date:"j" }}</span>
+              </div>
+              {% else %}
+              <div class="w-10 h-10 rounded-xl bg-white border border-gray-200 flex flex-col items-center justify-center">
+                <span class="text-[9px] text-gray-400 font-semibold uppercase leading-none">{{ group.day_abbr }}</span>
+                <span class="text-base font-bold text-gray-700 leading-tight">{{ group.date|date:"j" }}</span>
+              </div>
+              {% endif %}
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-gray-800">{{ group.day_name }}, {{ group.date|date:"j" }} de {{ group.month_name }}</p>
+              <p class="text-xs text-gray-400">{{ group.bookings|length }} reserva{{ group.bookings|length|pluralize }}</p>
+            </div>
+            <div class="flex-1 h-px bg-gray-200 ml-2"></div>
+          </div>
+
+          <!-- Reservas do dia -->
+          <div class="ml-14 flex flex-col gap-2">
+            {% for booking in group.bookings %}
+            <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex items-start justify-between gap-4">
+
+              <div class="flex items-start gap-3 flex-1 min-w-0">
+                <!-- Cor por status -->
+                <div class="w-1 self-stretch rounded-full flex-shrink-0
+                  {% if booking.status == 'confirmed' %}bg-green-400
+                  {% else %}bg-yellow-400
+                  {% endif %}">
+                </div>
+                <div class="min-w-0">
+                  <p class="text-sm font-semibold text-gray-800 truncate">{{ booking.resource.name }}</p>
+                  <p class="text-xs text-gray-500 mt-0.5">
+                    {% if booking.contact %}
+                      {{ booking.contact.name|default:booking.contact.phone }}
+                    {% elif booking.client_name %}
+                      {{ booking.client_name }}
+                    {% else %}
+                      <span class="italic text-gray-400">Cliente não informado</span>
+                    {% endif %}
+                  </p>
+                  {% if booking.notes %}
+                  <p class="text-xs text-gray-400 mt-1 italic truncate">{{ booking.notes }}</p>
+                  {% endif %}
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2 flex-shrink-0">
+                <!-- Badge de status -->
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium
+                  {% if booking.status == 'confirmed' %}bg-green-100 text-green-700
+                  {% else %}bg-yellow-100 text-yellow-700
+                  {% endif %}">
+                  {% if booking.status == 'confirmed' %}Confirmado{% else %}Pendente{% endif %}
+                </span>
+
+                <!-- Ações rápidas -->
+                {% if booking.status == 'pending' %}
+                <form method="post" action="{% url 'bookings:update_status' booking.id 'confirmed' %}" class="inline">
+                  {% csrf_token %}
+                  <button type="submit"
+                    class="px-2.5 py-1 text-[11px] font-medium bg-green-500 hover:bg-green-600 text-white rounded-lg transition">
+                    Confirmar
+                  </button>
+                </form>
+                {% endif %}
+                <form method="post" action="{% url 'bookings:update_status' booking.id 'cancelled' %}"
+                      class="inline"
+                      onsubmit="return confirm('Cancelar esta reserva?')">
+                  {% csrf_token %}
+                  <button type="submit"
+                    class="px-2.5 py-1 text-[11px] font-medium text-red-500 hover:bg-red-50 border border-red-200 rounded-lg transition">
+                    Cancelar
+                  </button>
+                </form>
+              </div>
+
+            </div>
+            {% endfor %}
+          </div>
+
+        </div>
+        {% endfor %}
+
+      {% else %}
+      <!-- Estado vazio -->
+      <div class="flex flex-col items-center justify-center py-20 text-center">
+        <div class="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
+          <svg class="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+          </svg>
+        </div>
+        <p class="text-sm font-medium text-gray-600 mb-1">Nenhum compromisso agendado</p>
+        <p class="text-xs text-gray-400">Reservas futuras confirmadas ou pendentes aparecerão aqui</p>
+        <a href="{% url 'bookings:calendar' %}"
+           class="mt-4 px-4 py-2 text-sm font-medium bg-wa-green hover:bg-wa-dark text-white rounded-xl transition">
+          Ver calendário
+        </a>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+
+</div>
+{% endblock %}

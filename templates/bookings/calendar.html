@@ -1,0 +1,144 @@
+{% extends "base_app.html" %}
+{% block title %}Agenda | MrBot{% endblock %}
+
+{% block app_content %}
+<div class="flex flex-col h-full overflow-hidden bg-gray-50">
+
+  <!-- ── Cabeçalho ── -->
+  <div class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
+    <div class="flex items-center gap-6">
+      <div>
+        <h1 class="text-lg font-bold text-gray-800">Agenda</h1>
+      </div>
+      <!-- Tabs -->
+      <div class="flex gap-1 bg-gray-100 rounded-xl p-1">
+        <a href="{% url 'bookings:calendar' %}?year={{ year }}&month={{ month }}"
+           class="px-4 py-1.5 text-sm font-medium rounded-lg bg-white text-gray-800 shadow-sm">
+          Calendário
+        </a>
+        <a href="{% url 'bookings:upcoming' %}"
+           class="px-4 py-1.5 text-sm font-medium rounded-lg text-gray-500 hover:text-gray-700 transition">
+          Próximos
+        </a>
+      </div>
+    </div>
+
+    <!-- Navegação de mês -->
+    <div class="flex items-center gap-2">
+      <a href="{% url 'bookings:calendar' %}?year={{ prev_year }}&month={{ prev_month }}"
+         class="p-2 rounded-lg hover:bg-gray-100 text-gray-600 transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+        </svg>
+      </a>
+      <span class="text-sm font-semibold text-gray-800 min-w-[130px] text-center">
+        {{ month_name }} {{ year }}
+      </span>
+      <a href="{% url 'bookings:calendar' %}?year={{ next_year }}&month={{ next_month }}"
+         class="p-2 rounded-lg hover:bg-gray-100 text-gray-600 transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+        </svg>
+      </a>
+      <a href="{% url 'bookings:calendar' %}"
+         class="ml-1 px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition">
+        Hoje
+      </a>
+    </div>
+  </div>
+
+  <!-- ── Conteúdo principal centrado ── -->
+  <div class="flex flex-1 overflow-hidden justify-center">
+    <div class="flex w-full max-w-5xl overflow-hidden">
+
+      <!-- Grade do calendário -->
+      <div class="flex-1 overflow-auto px-6 py-4">
+
+        <!-- Cabeçalho dos dias da semana -->
+        <div class="grid grid-cols-7 mb-1">
+          {% for day_name in weekday_names %}
+          <div class="text-center text-[11px] font-semibold text-gray-400 uppercase tracking-wider py-2">
+            {{ day_name }}
+          </div>
+          {% endfor %}
+        </div>
+
+        <!-- Células de dias -->
+        <div class="grid grid-cols-7 gap-1.5">
+          {% for week in weeks %}
+            {% for cell in week %}
+            <div
+              hx-get="{% url 'bookings:day_detail' cell.date|date:'Y-m-d' %}"
+              hx-target="#day-panel"
+              hx-swap="innerHTML"
+              class="min-h-[80px] rounded-xl p-2 cursor-pointer transition-all border
+                {% if not cell.in_month %}
+                  bg-gray-50/60 border-gray-100 opacity-40
+                {% elif selected_date and cell.date|date:'Y-m-d' == selected_date|date:'Y-m-d' %}
+                  bg-wa-green/10 border-wa-green/40 ring-2 ring-wa-green/20
+                {% elif cell.is_today %}
+                  bg-blue-50 border-blue-200
+                {% else %}
+                  bg-white border-gray-100 hover:border-gray-300 hover:shadow-sm
+                {% endif %}">
+
+              <!-- Número do dia -->
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-xs font-semibold
+                  {% if cell.is_today %}
+                    w-5 h-5 flex items-center justify-center bg-blue-500 text-white rounded-full
+                  {% elif not cell.in_month %}text-gray-300
+                  {% elif selected_date and cell.date|date:'Y-m-d' == selected_date|date:'Y-m-d' %}text-wa-dark
+                  {% else %}text-gray-600
+                  {% endif %}">
+                  {{ cell.date|date:"j" }}
+                </span>
+                {% if cell.bookings and cell.in_month %}
+                <span class="text-[9px] text-gray-400 font-medium">{{ cell.bookings|length }}</span>
+                {% endif %}
+              </div>
+
+              <!-- Indicadores de reservas (até 2) -->
+              {% if cell.in_month %}
+              <div class="flex flex-col gap-0.5">
+                {% for booking in cell.bookings|slice:":2" %}
+                <div class="rounded-md px-1.5 py-0.5 text-[9px] font-medium truncate leading-tight
+                  {% if booking.status == 'confirmed' %}bg-green-100 text-green-700
+                  {% elif booking.status == 'pending' %}bg-yellow-100 text-yellow-700
+                  {% else %}bg-gray-100 text-gray-400
+                  {% endif %}">
+                  {{ booking.resource.name }}
+                </div>
+                {% endfor %}
+                {% if cell.bookings|length > 2 %}
+                <div class="text-[9px] text-gray-400 pl-0.5">+{{ cell.bookings|length|add:"-2" }}</div>
+                {% endif %}
+              </div>
+              {% endif %}
+
+            </div>
+            {% endfor %}
+          {% endfor %}
+        </div>
+
+      </div>
+
+      <!-- ── Painel lateral (dia selecionado) ── -->
+      <div id="day-panel" class="w-72 flex-shrink-0 border-l border-gray-200 bg-white overflow-y-auto">
+        {% if selected_date %}
+          {% include "bookings/partials/day_detail.html" %}
+        {% else %}
+        <div class="flex flex-col items-center justify-center h-full text-gray-400 p-6 text-center">
+          <svg class="w-12 h-12 mb-3 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+          </svg>
+          <p class="text-xs text-gray-400">Clique em um dia para ver as reservas</p>
+        </div>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}

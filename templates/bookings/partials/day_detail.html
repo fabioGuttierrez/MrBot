@@ -1,0 +1,153 @@
+{% load i18n %}
+{% load humanize %}
+
+<!-- ── Cabeçalho do dia ── -->
+<div class="p-4 border-b border-gray-100">
+  <h2 class="text-base font-semibold text-gray-800">
+    {{ selected_date|date:"d \d\e F \d\e Y" }}
+  </h2>
+  <p class="text-xs text-gray-500 mt-0.5">
+    {% if day_bookings %}
+      {{ day_bookings|length }} reserva{{ day_bookings|length|pluralize }}
+    {% else %}
+      Nenhuma reserva
+    {% endif %}
+  </p>
+</div>
+
+{% if error %}
+<div class="mx-4 mt-3 px-3 py-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">
+  {{ error }}
+</div>
+{% endif %}
+
+<!-- ── Lista de reservas ── -->
+{% if day_bookings %}
+<div class="divide-y divide-gray-50">
+  {% for booking in day_bookings %}
+  <div class="p-4">
+    <!-- Recurso e status -->
+    <div class="flex items-start justify-between gap-2 mb-2">
+      <div>
+        <p class="text-sm font-semibold text-gray-800">{{ booking.resource.name }}</p>
+        <p class="text-xs text-gray-500">{{ booking.resource.get_booking_type_display }}</p>
+      </div>
+      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0
+        {% if booking.status == 'confirmed' %}bg-green-100 text-green-700
+        {% elif booking.status == 'pending' %}bg-yellow-100 text-yellow-700
+        {% else %}bg-gray-100 text-gray-500
+        {% endif %}">
+        {% if booking.status == 'confirmed' %}Confirmado
+        {% elif booking.status == 'pending' %}Pendente
+        {% else %}Cancelado
+        {% endif %}
+      </span>
+    </div>
+
+    <!-- Cliente -->
+    <p class="text-xs text-gray-600 mb-2">
+      <span class="text-gray-400">Cliente:</span>
+      {% if booking.contact %}
+        {{ booking.contact.name|default:booking.contact.phone }}
+      {% elif booking.client_name %}
+        {{ booking.client_name }}
+      {% else %}
+        <span class="italic text-gray-400">Não informado</span>
+      {% endif %}
+    </p>
+
+    {% if booking.notes %}
+    <p class="text-xs text-gray-500 italic mb-2">{{ booking.notes }}</p>
+    {% endif %}
+
+    <!-- Ações -->
+    {% if booking.status != 'cancelled' %}
+    <div class="flex gap-2 mt-2">
+      {% if booking.status == 'pending' %}
+      <button
+        hx-post="{% url 'bookings:update_status' booking.id 'confirmed' %}"
+        hx-target="#day-panel"
+        hx-swap="innerHTML"
+        hx-confirm="Confirmar esta reserva?"
+        class="flex-1 px-3 py-1.5 text-xs font-medium bg-green-500 hover:bg-green-600 text-white rounded-lg transition">
+        Confirmar
+      </button>
+      {% endif %}
+      <button
+        hx-post="{% url 'bookings:update_status' booking.id 'cancelled' %}"
+        hx-target="#day-panel"
+        hx-swap="innerHTML"
+        hx-confirm="Cancelar esta reserva?"
+        class="flex-1 px-3 py-1.5 text-xs font-medium bg-white hover:bg-red-50 text-red-600 border border-red-200 hover:border-red-300 rounded-lg transition">
+        Cancelar
+      </button>
+    </div>
+    {% else %}
+    <button
+      hx-post="{% url 'bookings:update_status' booking.id 'pending' %}"
+      hx-target="#day-panel"
+      hx-swap="innerHTML"
+      class="w-full px-3 py-1.5 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition mt-2">
+      Reativar
+    </button>
+    {% endif %}
+
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="px-4 py-6 text-center">
+  <p class="text-sm text-gray-400">Nenhuma reserva neste dia</p>
+</div>
+{% endif %}
+
+<!-- ── Formulário: nova reserva manual ── -->
+<div class="border-t border-gray-100 p-4" x-data="{ open: false }">
+  <button @click="open = !open"
+    class="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-wa-dark border border-wa-dark/30 hover:bg-wa-green/5 rounded-xl transition">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+    </svg>
+    Nova reserva
+  </button>
+
+  <form x-show="open" x-cloak x-transition
+    hx-post="{% url 'bookings:create' %}"
+    hx-target="#day-panel"
+    hx-swap="innerHTML"
+    class="mt-3 flex flex-col gap-3">
+    {% csrf_token %}
+    <input type="hidden" name="event_date" value="{{ selected_date|date:'Y-m-d' }}">
+
+    <!-- Recurso -->
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">Recurso</label>
+      <select name="resource" required
+        class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-wa-green/40">
+        <option value="">Selecionar...</option>
+        {% for resource in resources %}
+        <option value="{{ resource.id }}">{{ resource.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- Nome do cliente -->
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">Nome do cliente</label>
+      <input type="text" name="client_name" placeholder="Ex: João Silva"
+        class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-wa-green/40">
+    </div>
+
+    <!-- Observações -->
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">Observações</label>
+      <textarea name="notes" rows="2" placeholder="Tipo de evento, local..."
+        class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-wa-green/40 resize-none"></textarea>
+    </div>
+
+    <button type="submit"
+      class="w-full py-2 text-sm font-semibold bg-wa-green hover:bg-wa-dark text-white rounded-xl transition">
+      Salvar reserva
+    </button>
+  </form>
+</div>

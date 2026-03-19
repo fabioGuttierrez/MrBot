@@ -157,12 +157,9 @@ def _handle_message_event(tenant, session, payload: dict):
 
     for msg in messages:
         key = msg.get("key", {})
+        from_me: bool = key.get("fromMe", False)
 
         # ── Filtros obrigatórios ──────────────────────────────────────────
-        # Ignora mensagens enviadas pelo próprio número
-        if key.get("fromMe", False):
-            continue
-
         # Ignora mensagens de grupos (remoteJid termina em @g.us)
         chat_id: str = key.get("remoteJid", "")
         if chat_id.endswith("@g.us"):
@@ -174,12 +171,7 @@ def _handle_message_event(tenant, session, payload: dict):
             logger.debug("remoteJid inválido ou não numérico: %s", chat_id)
             continue
 
-        msg_type_raw: str = msg.get("messageType", "")
-        msg_type: str = _normalize_message_type(msg_type_raw)
-        push_name: str = _fix_encoding(msg.get("pushName", ""))
         wa_message_id: str = key.get("id", "")
-
-        # Extrai texto (conversation ou extendedTextMessage)
         msg_content = msg.get("message", {})
         raw_text = (
             msg_content.get("conversation", "")
@@ -187,7 +179,17 @@ def _handle_message_event(tenant, session, payload: dict):
         )
         text: str = _fix_encoding(raw_text.strip())
 
-        # ── Roteamento por tipo ──────────────────────────────────────────
+        # ── Mensagens enviadas pelo operador via app WA ──────────────────
+        if from_me:
+            if text:
+                _store_operator_reply(tenant, phone, wa_message_id, text)
+            continue
+
+        # ── Mensagens recebidas de contatos (fluxo normal) ───────────────
+        msg_type_raw: str = msg.get("messageType", "")
+        msg_type: str = _normalize_message_type(msg_type_raw)
+        push_name: str = _fix_encoding(msg.get("pushName", ""))
+
         if text:
             logger.info(
                 "Webhook MESSAGES_UPSERT | tenant=%s | phone=%s | tipo=%s | msg=%.80s",
@@ -222,6 +224,48 @@ def _handle_message_event(tenant, session, payload: dict):
                 "Mensagem sem texto nem mídia reconhecida (tipo=%s) de %s — ignorando.",
                 msg_type, phone,
             )
+
+
+def _store_operator_reply(tenant, phone: str, wa_message_id: str, text: str):
+    """
+    Registra no banco uma mensagem de texto enviada pelo operador diretamente
+    pelo app WhatsApp (fromMe=True). Só age se já houver uma conversa ativa
+    para esse contato. Ignora se o wa_message_id já existe (bot já criou).
+    """
+    from apps.conversations.models import Conversation, Message, MessageDirection
+    from apps.channels_wa.tasks import _notify_websocket
+    from django.utils import timezone
+
+    # Mensagem já registrada (enviada pelo bot via API) → evita duplicata
+    if wa_message_id and Message.objects.filter(wa_message_id=wa_message_id).exists():
+        return
+
+    # Busca a conversa mais recente para esse número (contato deve existir)
+    conversation = (
+        Conversation.objects
+        .filter(tenant=tenant, contact__phone=phone)
+        .order_by("-last_message_at")
+        .first()
+    )
+    if not conversation:
+        return  # Sem conversa prévia — não cria registro órfão
+
+    message = Message.objects.create(
+        conversation=conversation,
+        direction=MessageDirection.OUT,
+        content=text,
+        wa_message_id=wa_message_id,
+    )
+
+    conversation.last_message_at = timezone.now()
+    conversation.save(update_fields=["last_message_at"])
+
+    _notify_websocket(conversation, message)
+
+    logger.info(
+        "Operador respondeu via WA app | tenant=%s phone=%s msg=%.60s",
+        tenant.slug, phone, text,
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -68,6 +68,18 @@ def _run_openai(conversation, message) -> None:
     system_prompt = bot.build_system_prompt(company_name=tenant.name)
     history: list[dict] = conversation.context or []
 
+    # Ferramentas de function calling (ex: agendamentos)
+    tools = None
+    tool_executor = None
+    if bot.tools_enabled:
+        from apps.bookings.tools import BOOKING_TOOLS, make_tool_executor
+        tools = BOOKING_TOOLS
+        tool_executor = make_tool_executor(
+            tenant_id=str(conversation.tenant_id),
+            conversation_id=str(conversation.id),
+            contact_id=str(conversation.contact_id) if conversation.contact_id else None,
+        )
+
     reply, updated_history = chat_completion(
         system_prompt=system_prompt,
         history=history,
@@ -75,6 +87,8 @@ def _run_openai(conversation, message) -> None:
         model=bot.model,
         temperature=bot.temperature,
         max_tokens=bot.max_tokens,
+        tools=tools,
+        tool_executor=tool_executor,
     )
 
     wants_transfer = _check_transfer_intent(reply)

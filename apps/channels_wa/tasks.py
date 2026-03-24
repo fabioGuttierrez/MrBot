@@ -19,10 +19,73 @@ Fluxo de concatenação de mensagens:
    f. Aciona o bot engine
 ─────────────────────────────────────────────────────────────
 """
+import base64 as _base64
 import logging
+import os
+from datetime import date
+
 import redis as redis_lib
 from celery import shared_task
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
+
+# Prefixos de chave Redis
+_BUF_KEY = "concat_buf:{tid}:{phone}"   # lista de textos pendentes (tipo List)
+_TASK_KEY = "concat_tid:{tid}:{phone}"  # task_id da task agendada  (tipo String)
+_TTL = 600  # TTL das chaves Redis (10 min) — segurança contra vazamentos
+
+# Mapeamento mimetype → extensão de arquivo
+_MIME_TO_EXT = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    "video/mp4": "mp4",
+    "video/3gpp": "3gp",
+    "audio/ogg": "ogg",
+    "audio/mp4": "m4a",
+    "audio/mpeg": "mp3",
+    "audio/aac": "aac",
+    "application/pdf": "pdf",
+    "application/octet-stream": "bin",
+}
+_MEDIA_TYPE_EXT = {
+    "image": "jpg", "video": "mp4", "audio": "ogg",
+    "ptt": "ogg", "document": "bin", "sticker": "webp",
+}
+
+
+def _save_base64_media(base64_data: str, mimetype: str, wa_message_id: str, media_type: str) -> str:
+    """
+    Decodifica o base64 recebido da Evolution API, salva em MEDIA_ROOT/wa_media/
+    e retorna a URL relativa (/media/wa_media/...) para uso como media_url.
+    Retorna "" se base64_data estiver vazio ou ocorrer erro.
+    """
+    if not base64_data:
+        return ""
+    try:
+        clean_mime = (mimetype or "").split(";")[0].strip()
+        ext = _MIME_TO_EXT.get(clean_mime) or _MEDIA_TYPE_EXT.get(media_type, "bin")
+
+        today = date.today()
+        subfolder = os.path.join("wa_media", str(today.year), f"{today.month:02d}")
+        save_dir = os.path.join(settings.MEDIA_ROOT, subfolder)
+        os.makedirs(save_dir, exist_ok=True)
+
+        filename = f"{wa_message_id}.{ext}"
+        filepath = os.path.join(save_dir, filename)
+
+        binary_data = _base64.b64decode(base64_data)
+        with open(filepath, "wb") as fh:
+            fh.write(binary_data)
+
+        media_url = f"{settings.MEDIA_URL}{subfolder}/{filename}".replace("\\", "/")
+        logger.debug("Mídia salva | path=%s url=%s", filepath, media_url)
+        return media_url
+    except Exception as exc:
+        logger.warning("Falha ao salvar base64 para wa_id=%s: %s", wa_message_id, exc)
+        return ""
 
 logger = logging.getLogger(__name__)
 
@@ -314,7 +377,7 @@ def process_media_message(
         session = WhatsAppSession.objects.get(id=session_id)
         client = get_client_for_session(session)
 
-        # Download da mídia — retorna URL pública
+        # Download da mídia — Evolution retorna base64; salvamos em disco
         transcribe = media_type in ("audio", "ptt")
         try:
             result = client.download_message(
@@ -323,8 +386,10 @@ def process_media_message(
                 generate_mp3=True,
                 transcribe=transcribe,
             )
-            media_url = result.get("link") or result.get("url") or result.get("mediaUrl", "")
-            transcription = result.get("transcription", "") if transcribe else ""
+            base64_data = result.get("base64", "")
+            mimetype = result.get("mimetype", "")
+            transcription = result.get("text", "") if transcribe else ""
+            media_url = _save_base64_media(base64_data, mimetype, wa_message_id, media_type)
         except Exception as exc:
             logger.warning("Falha ao baixar mídia %s: %s", wa_message_id, exc)
             media_url = ""

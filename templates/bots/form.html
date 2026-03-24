@@ -46,13 +46,41 @@
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Modelo OpenAI</label>
-          <select name="model"
-                  class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-wa-green">
-            <option value="gpt-4o" {% if bot.model == 'gpt-4o' or not bot %}selected{% endif %}>gpt-4o</option>
-            <option value="gpt-4o-mini" {% if bot.model == 'gpt-4o-mini' %}selected{% endif %}>gpt-4o-mini</option>
-            <option value="gpt-3.5-turbo" {% if bot.model == 'gpt-3.5-turbo' %}selected{% endif %}>gpt-3.5-turbo</option>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Provedor de IA</label>
+          <select name="ai_provider" id="id_ai_provider"
+                  class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-wa-green"
+                  onchange="mrbot.updateModels(this.value)">
+            {% for value, label in ai_providers %}
+              <option value="{{ value }}"
+                {% if bot.ai_provider == value %}selected
+                {% elif not bot and value == 'openai' %}selected{% endif %}>
+                {{ label }}
+              </option>
+            {% endfor %}
           </select>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Modelo</label>
+          <select name="model" id="id_model"
+                  class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-wa-green">
+            <!-- Opções populadas pelo JS updateModels() no DOMContentLoaded -->
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Chave de API</label>
+          <input type="password" name="api_key" id="id_api_key"
+                 autocomplete="new-password"
+                 placeholder="{% if bot.api_key %}••••••••••••••••{% else %}Chave de API do provedor...{% endif %}"
+                 class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-wa-green">
+          <p class="text-xs text-gray-400 mt-1">Deixe em branco para usar a chave global da plataforma.</p>
+          {% if bot.api_key %}
+          <label class="flex items-center gap-2 mt-2 cursor-pointer">
+            <input type="checkbox" name="clear_api_key" class="rounded text-red-500">
+            <span class="text-xs text-gray-500">Remover chave personalizada e usar a chave global</span>
+          </label>
+          {% endif %}
         </div>
       </div>
 
@@ -120,5 +148,54 @@
     </form>
   </div>
 
-</div>
+
+<script>
+(function () {
+  const PROVIDER_MODELS = {
+    openai: [
+      { value: "gpt-4o",        label: "GPT-4o (recomendado)" },
+      { value: "gpt-4o-mini",   label: "GPT-4o Mini" },
+      { value: "gpt-4-turbo",   label: "GPT-4 Turbo" },
+      { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo" },
+    ],
+    anthropic: [
+      { value: "claude-opus-4-5",   label: "Claude Opus 4.5 (recomendado)" },
+      { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
+      { value: "claude-haiku-4-5",  label: "Claude Haiku 4.5" },
+    ],
+    google: [
+      { value: "gemini-1.5-pro",   label: "Gemini 1.5 Pro (recomendado)" },
+      { value: "gemini-1.5-flash", label: "Gemini 1.5 Flash" },
+      { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
+    ],
+    xai: [
+      { value: "grok-2",      label: "Grok-2 (recomendado)" },
+      { value: "grok-2-mini", label: "Grok-2 Mini" },
+    ],
+  };
+
+  const CURRENT_MODEL = "{{ bot.model|default:'gpt-4o' }}";
+
+  window.mrbot = window.mrbot || {};
+
+  window.mrbot.updateModels = function (provider) {
+    const select = document.getElementById("id_model");
+    const models = PROVIDER_MODELS[provider] || [];
+    select.innerHTML = "";
+    models.forEach(function (m) {
+      const opt = document.createElement("option");
+      opt.value = m.value;
+      opt.textContent = m.label;
+      if (m.value === CURRENT_MODEL) { opt.selected = true; }
+      select.appendChild(opt);
+    });
+    if (!select.value && select.options.length) { select.selectedIndex = 0; }
+  };
+
+  document.addEventListener("DOMContentLoaded", function () {
+    const providerSelect = document.getElementById("id_ai_provider");
+    if (providerSelect) { window.mrbot.updateModels(providerSelect.value); }
+  });
+}());
+</script>
 {% endblock %}

@@ -165,15 +165,41 @@ function chatWindow(convId, csrf) {
 
       const isOut = msg.direction === "out";
       const time = new Date(msg.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      const timeColor = isOut ? "text-green-200" : "text-gray-400";
+      const bubbleClass = isOut
+        ? "bg-wa-bubble text-white rounded-br-sm"
+        : "bg-white text-gray-800 rounded-bl-sm";
+
+      let body = "";
+      const mt = msg.media_type || "";
+      const mu = msg.media_url || "";
+
+      if (mt === "image" && mu) {
+        body = `<img src="${mu}" alt="Imagem" class="rounded-lg max-w-full mb-1 cursor-pointer" onclick="window.open('${mu}','_blank')" />`;
+      } else if (mt === "video" && mu) {
+        body = `<video controls class="rounded-lg max-w-full mb-1"><source src="${mu}" /></video>`;
+      } else if ((mt === "audio" || mt === "ptt") && mu) {
+        body = `<audio controls class="mb-1" style="min-width:220px"><source src="${mu}" /></audio>`;
+        if (msg.content && !msg.content.includes("Áudio")) {
+          body += `<p class="whitespace-pre-wrap break-words text-xs mt-1 italic">🎤 ${this._escape(msg.content)}</p>`;
+        }
+      } else if (mt === "document" && mu) {
+        const linkColor = isOut ? "text-green-100" : "text-wa-dark";
+        body = `<a href="${mu}" target="_blank" class="flex items-center gap-2 underline mb-1 ${linkColor}">
+          <svg class="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"/>
+          </svg>${this._escape(msg.content)}</a>`;
+      } else {
+        body = `<p class="whitespace-pre-wrap break-words">${this._escape(msg.content)}</p>`;
+      }
 
       const div = document.createElement("div");
       div.setAttribute("data-msg-id", msg.id || "");
       div.className = `flex ${isOut ? "justify-end" : "justify-start"} mb-1`;
       div.innerHTML = `
-        <div class="max-w-[70%] px-3 py-2 rounded-2xl text-sm shadow-sm
-          ${isOut ? "bg-wa-bubble text-white rounded-br-sm" : "bg-white text-gray-800 rounded-bl-sm"}">
-          <p class="whitespace-pre-wrap break-words">${this._escape(msg.content)}</p>
-          <p class="text-right mt-1 ${isOut ? "text-green-200" : "text-gray-400"} text-xs">${time}</p>
+        <div class="max-w-[70%] px-3 py-2 rounded-2xl text-sm shadow-sm ${bubbleClass}">
+          ${body}
+          <p class="text-right mt-1 ${timeColor} text-xs">${time}${isOut ? " ✓✓" : ""}</p>
         </div>`;
       container.appendChild(div);
       this._scrollBottom();

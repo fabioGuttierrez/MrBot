@@ -5,7 +5,7 @@ from django.views.decorators.http import require_POST
 from django.http import JsonResponse
 from django.contrib import messages
 
-from .models import Bot, Department
+from .models import Bot, Department, AIProvider
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,8 @@ def create(request):
                 name=name,
                 department=department,
                 persona=persona,
+                ai_provider=request.POST.get("ai_provider", AIProvider.OPENAI),
+                model=request.POST.get("model", "gpt-4o"),
             )
             messages.success(request, f'Bot "{bot.name}" criado com sucesso.')
             if from_wizard:
@@ -43,6 +45,7 @@ def create(request):
             return redirect("bots:detail", bot_id=bot.id)
     return render(request, "bots/form.html", {
         "departments": Department.choices,
+        "ai_providers": AIProvider.choices,
         "action": "create",
         "from_wizard": from_wizard,
     })
@@ -57,7 +60,13 @@ def detail(request, bot_id):
         bot.department = request.POST.get("department", bot.department)
         bot.persona = request.POST.get("persona", bot.persona).strip()
         bot.extra_instructions = request.POST.get("extra_instructions", bot.extra_instructions).strip()
+        bot.ai_provider = request.POST.get("ai_provider", bot.ai_provider)
         bot.model = request.POST.get("model", bot.model)
+        submitted_key = request.POST.get("api_key", "").strip()
+        if submitted_key:
+            bot.api_key = submitted_key
+        elif request.POST.get("clear_api_key"):
+            bot.api_key = ""
         raw_caps = request.POST.get("capabilities", "")
         raw_rests = request.POST.get("restrictions", "")
         bot.capabilities = [c.strip() for c in raw_caps.splitlines() if c.strip()]
@@ -68,6 +77,7 @@ def detail(request, bot_id):
     return render(request, "bots/form.html", {
         "bot": bot,
         "departments": Department.choices,
+        "ai_providers": AIProvider.choices,
         "action": "edit",
     })
 

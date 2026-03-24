@@ -216,10 +216,13 @@ CRISPY_ALLOWED_TEMPLATE_PACKS = "tailwind"
 CRISPY_TEMPLATE_PACK = "tailwind"
 
 # --------------------------------------------------------------------------
-# OpenAI
+# IA Providers — chaves globais (fallback quando o bot não tem chave própria)
 # --------------------------------------------------------------------------
-OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
-OPENAI_MODEL = "gpt-4o"
+OPENAI_API_KEY    = env("OPENAI_API_KEY",    default="")
+ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
+GOOGLE_API_KEY    = env("GOOGLE_API_KEY",    default="")
+XAI_API_KEY       = env("XAI_API_KEY",       default="")
+OPENAI_MODEL      = "gpt-4o"  # mantido para compatibilidade
 
 # --------------------------------------------------------------------------
 # Evolution API (WhatsApp)

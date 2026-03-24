@@ -20,7 +20,7 @@
         </svg>
         {{ message.content }}
       </a>
-    {% elif message.media_type in 'audio,ptt' and message.media_url %}
+    {% elif message.media_type == 'audio' and message.media_url or message.media_type == 'ptt' and message.media_url %}
       <audio controls class="mb-1" style="min-width:220px">
         <source src="{{ message.media_url }}" />
       </audio>

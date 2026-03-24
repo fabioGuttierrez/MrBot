@@ -12,6 +12,13 @@ class Department(models.TextChoices):
     GENERAL = "general", _("Geral")
 
 
+class AIProvider(models.TextChoices):
+    OPENAI    = "openai",    _("OpenAI")
+    ANTHROPIC = "anthropic", _("Anthropic (Claude)")
+    GOOGLE    = "google",    _("Google (Gemini)")
+    XAI       = "xai",      _("xAI (Grok)")
+
+
 class Bot(TimeStampedModel):
     """Bot conversacional de um tenant."""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -27,8 +34,21 @@ class Bot(TimeStampedModel):
     restrictions = models.JSONField(_("o que não pode fazer"), default=list, blank=True)
     extra_instructions = models.TextField(_("instruções extras"), blank=True)
 
-    # Configurações OpenAI
-    model = models.CharField(_("modelo OpenAI"), max_length=50, default="gpt-4o")
+    # Configurações de IA
+    ai_provider = models.CharField(
+        _("provedor de IA"),
+        max_length=20,
+        choices=AIProvider.choices,
+        default=AIProvider.OPENAI,
+    )
+    api_key = models.CharField(
+        _("chave de API"),
+        max_length=200,
+        blank=True,
+        default="",
+        help_text=_("Deixe em branco para usar a chave global da plataforma"),
+    )
+    model = models.CharField(_("modelo"), max_length=50, default="gpt-4o")
     temperature = models.FloatField(_("temperatura"), default=0.7)
     max_tokens = models.PositiveIntegerField(_("máx. tokens resposta"), default=500)
 

@@ -37,7 +37,17 @@
                 · <span class="{% if bot.is_active %}text-green-600{% else %}text-gray-400{% endif %}">
                     {{ bot.is_active|yesno:"Ativo,Inativo" }}
                   </span>
-                · {{ bot.model }}
+                · <span class="inline-flex items-center gap-1.5">
+                    <span class="px-1.5 py-0.5 rounded text-xs font-semibold
+                      {% if bot.ai_provider == 'openai' %}bg-emerald-100 text-emerald-700
+                      {% elif bot.ai_provider == 'anthropic' %}bg-orange-100 text-orange-700
+                      {% elif bot.ai_provider == 'google' %}bg-blue-100 text-blue-700
+                      {% elif bot.ai_provider == 'xai' %}bg-slate-100 text-slate-600
+                      {% else %}bg-gray-100 text-gray-500{% endif %}">
+                      {{ bot.get_ai_provider_display }}
+                    </span>
+                    <span class="text-gray-400 text-xs">{{ bot.model }}</span>
+                  </span>
               </p>
             </div>
           </div>

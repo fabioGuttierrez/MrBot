@@ -8,7 +8,7 @@ Fluxo de decisão:
      • "end"            → conversa encerrada, para aqui
      • "openai"         → flow delegou para IA → segue para passo 2
      • "no_flow"        → bot sem flow → vai direto para passo 2
-  2. OpenAI GPT (chat completion com system prompt + histórico)
+  2. IA configurada (OpenAI / Anthropic / Gemini / xAI) com chat completion
   3. Detecta intenção de transferência na resposta da IA
   4. Salva e envia resposta, atualiza contexto
 """
@@ -49,18 +49,18 @@ def process_message(*, conversation, message) -> None:
         if flow_outcome in ("handled", "transfer_human", "end"):
             return
 
-        # ── Passo 2: OpenAI (outcome == "openai" ou "no_flow") ─────────────
-        _run_openai(conversation, message)
+        # ── Passo 2: IA (outcome == "openai" ou "no_flow") ─────────────────
+        _run_ai(conversation, message)
 
     except Exception as exc:
         logger.exception("Erro no bot engine | conversa=%s", conversation.id)
 
 
-def _run_openai(conversation, message) -> None:
-    """Chama o OpenAI e envia a resposta."""
+def _run_ai(conversation, message) -> None:
+    """Despacha para o serviço de IA configurado no bot e envia a resposta."""
     from apps.conversations.models import Message, MessageDirection, ConversationStatus
     from apps.channels_wa.evolution import get_client_for_session
-    from .openai_service import chat_completion
+    from .models import AIProvider
 
     bot = conversation.bot
     tenant = conversation.tenant
@@ -80,6 +80,21 @@ def _run_openai(conversation, message) -> None:
             contact_id=str(conversation.contact_id) if conversation.contact_id else None,
         )
 
+    # Chave de API por bot (vazio → None → fallback para settings em cada serviço)
+    api_key = bot.api_key or None
+
+    # Despacha para o serviço correto conforme o provedor configurado
+    provider = bot.ai_provider
+    if provider == AIProvider.ANTHROPIC:
+        from .anthropic_service import chat_completion
+    elif provider == AIProvider.GOOGLE:
+        from .google_service import chat_completion
+    elif provider == AIProvider.XAI:
+        from .xai_service import chat_completion
+    else:
+        # OpenAI é o padrão; também cobre bots legados sem ai_provider definido
+        from .openai_service import chat_completion
+
     reply, updated_history = chat_completion(
         system_prompt=system_prompt,
         history=history,
@@ -89,6 +104,7 @@ def _run_openai(conversation, message) -> None:
         max_tokens=bot.max_tokens,
         tools=tools,
         tool_executor=tool_executor,
+        api_key=api_key,
     )
 
     wants_transfer = _check_transfer_intent(reply)
@@ -117,7 +133,7 @@ def _run_openai(conversation, message) -> None:
     conversation.last_message_at = timezone.now()
 
     if wants_transfer:
-        logger.info("OpenAI indicou transferência | conversa=%s", conversation.id)
+        logger.info("IA indicou transferência | conversa=%s provider=%s", conversation.id, provider)
         conversation.status = ConversationStatus.PENDING
         conversation.unread_count += 1
         update_fields += ["status", "unread_count"]

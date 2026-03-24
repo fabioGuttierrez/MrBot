@@ -76,7 +76,7 @@ def conversation_detail(request, conversation_id):
     messages_qs = (
         conversation.messages
         .order_by("created")
-        .only("id", "direction", "content", "created", "is_concatenated")
+        .only("id", "direction", "content", "created", "is_concatenated", "media_url", "media_type")
     )
 
     status_filter = request.GET.get("status", "all")
@@ -232,6 +232,8 @@ def _push_ws(conversation, message):
                     "id": str(message.id),
                     "direction": message.direction,
                     "content": message.content,
+                    "media_url": message.media_url or "",
+                    "media_type": message.media_type or "",
                     "timestamp": message.created.isoformat(),
                     "is_concatenated": False,
                 },

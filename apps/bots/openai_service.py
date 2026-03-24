@@ -1,5 +1,5 @@
 """
-Serviço de integração com OpenAI GPT-4.
+Serviço de integração com OpenAI GPT.
 
 Gerencia o histórico de mensagens por conversa e executa
 chat completions com o system prompt do bot.
@@ -18,8 +18,9 @@ MAX_HISTORY_MESSAGES = 20
 MAX_TOOL_ITERATIONS = 5
 
 
-def get_client() -> OpenAI:
-    return OpenAI(api_key=settings.OPENAI_API_KEY)
+def get_client(api_key: str | None = None) -> OpenAI:
+    """Cria cliente OpenAI usando chave do bot ou fallback para settings."""
+    return OpenAI(api_key=api_key or settings.OPENAI_API_KEY)
 
 
 def chat_completion(
@@ -32,6 +33,7 @@ def chat_completion(
     max_tokens: int = 500,
     tools: list[dict] | None = None,
     tool_executor=None,
+    api_key: str | None = None,
 ) -> tuple[str, list[dict]]:
     """
     Executa uma chat completion com histórico.
@@ -45,12 +47,41 @@ def chat_completion(
         max_tokens:     Limite de tokens na resposta
         tools:          Lista de tool schemas OpenAI (function calling). None = desativado.
         tool_executor:  Callable(tool_name, arguments) -> dict. Executa as ferramentas.
+        api_key:        Chave de API do bot (sobrescreve settings.OPENAI_API_KEY se fornecida).
 
     Returns:
         Tuple (resposta_texto, novo_historico)
     """
-    client = get_client()
+    client = get_client(api_key)
+    return _chat_completion_with_client(
+        client,
+        system_prompt=system_prompt,
+        history=history,
+        user_message=user_message,
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        tools=tools,
+        tool_executor=tool_executor,
+    )
 
+
+def _chat_completion_with_client(
+    client: OpenAI,
+    *,
+    system_prompt: str,
+    history: list[dict],
+    user_message: str,
+    model: str,
+    temperature: float,
+    max_tokens: int,
+    tools: list[dict] | None,
+    tool_executor,
+) -> tuple[str, list[dict]]:
+    """
+    Executa chat completion contra qualquer cliente OpenAI-compatível.
+    Reutilizado pelo xai_service (mesma interface de wire, base_url diferente).
+    """
     # Monta a lista completa de mensagens
     messages = [{"role": "system", "content": system_prompt}]
 

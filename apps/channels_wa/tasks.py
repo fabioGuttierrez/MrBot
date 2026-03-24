@@ -87,13 +87,6 @@ def _save_base64_media(base64_data: str, mimetype: str, wa_message_id: str, medi
         logger.warning("Falha ao salvar base64 para wa_id=%s: %s", wa_message_id, exc)
         return ""
 
-logger = logging.getLogger(__name__)
-
-# Prefixos de chave Redis
-_BUF_KEY = "concat_buf:{tid}:{phone}"   # lista de textos pendentes (tipo List)
-_TASK_KEY = "concat_tid:{tid}:{phone}"  # task_id da task agendada  (tipo String)
-_TTL = 600  # TTL das chaves Redis (10 min) — segurança contra vazamentos
-
 
 def _redis() -> redis_lib.Redis:
     """Retorna conexão direta ao Redis (decode_responses para strings Python)."""

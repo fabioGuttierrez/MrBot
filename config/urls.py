@@ -1,6 +1,7 @@
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
 from django.views.generic import RedirectView
+from django.views.static import serve
 from django.conf import settings
 from django.conf.urls.static import static
 
@@ -26,6 +27,9 @@ urlpatterns = [
     # Widget público (sem autenticação)
     path("widget/", include("apps.widget.urls", namespace="widget")),
 
+    # Arquivos de mídia (uploads, mídias do WhatsApp) — funciona em dev e produção
+    re_path(r"^media/(?P<path>.*)$", serve, {"document_root": settings.MEDIA_ROOT}),
+
     # Raiz → redireciona para inbox (sem conflito de namespace)
     path("", RedirectView.as_view(url="/inbox/", permanent=False)),
 ]
@@ -33,4 +37,3 @@ urlpatterns = [
 if settings.DEBUG:
     import debug_toolbar
     urlpatterns = [path("__debug__/", include(debug_toolbar.urls))] + urlpatterns
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

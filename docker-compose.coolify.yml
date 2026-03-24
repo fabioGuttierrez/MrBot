@@ -11,9 +11,14 @@ services:
       retries: 5
 
   web:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: unless-stopped
-    command: daphne -b 0.0.0.0 -p 8000 config.asgi:application
+    # Roda migrate antes de subir o servidor (seguro: migrate é idempotente)
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             daphne -b 0.0.0.0 -p 8000 config.asgi:application"
     volumes:
       - static_volume:/app/staticfiles
       - media_volume:/app/media
@@ -26,9 +31,10 @@ services:
         condition: service_healthy
 
   celery:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.celery
     restart: unless-stopped
-    command: celery -A config.celery worker -l info -c 2
     volumes:
       - media_volume:/app/media
     env_file:
@@ -38,9 +44,10 @@ services:
         condition: service_healthy
 
   celery-beat:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.celery-beat
     restart: unless-stopped
-    command: celery -A config.celery beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     env_file:
       - .env
     depends_on:
